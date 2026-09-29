@@ -61,9 +61,19 @@ module.exports = async function handler(req, res) {
       ""
     ).trim();
 
+    const accessKey = String(
+      process.env.ASHUR_AI_ACCESS_KEY ||
+      body.key ||
+      ""
+    ).trim();
+
     const params = new URLSearchParams();
     params.set("text", text);
     params.set("temperature", String(temperature));
+
+    if (accessKey) {
+      params.set("key", accessKey);
+    }
 
     if (conversationId) {
       params.set("conversation_id", conversationId);
@@ -108,10 +118,18 @@ module.exports = async function handler(req, res) {
     }
 
     if (!upstream.ok) {
+      const upstreamError =
+        data.error ||
+        data.message ||
+        `الخدمة الخارجية أعادت HTTP ${upstream.status}`;
+
       return res.status(502).json({
         status: false,
-        error: data.error || `الخدمة الخارجية أعادت HTTP ${upstream.status}`,
-        upstream_status: upstream.status
+        error: upstreamError,
+        upstream_status: upstream.status,
+        needs_key:
+          !accessKey &&
+          /مفتاح|key|access/i.test(String(upstreamError))
       });
     }
 
@@ -123,10 +141,18 @@ module.exports = async function handler(req, res) {
       null;
 
     if (!answer) {
+      const upstreamError =
+        data.error ||
+        data.message ||
+        "تم الاتصال بالخدمة لكن لم يتم العثور على نص الرد";
+
       return res.status(502).json({
         status: false,
-        error: data.error || "تم الاتصال بالخدمة لكن لم يتم العثور على نص الرد",
+        error: upstreamError,
         upstream_status: upstream.status,
+        needs_key:
+          !accessKey &&
+          /مفتاح|key|access/i.test(String(upstreamError)),
         upstream: data
       });
     }
