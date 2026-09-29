@@ -179,10 +179,16 @@
 
     <section class="settings">
       <span class="label">نسخة اختبار API</span>
-      <label class="temp-wrap">
-        <span class="label">Temperature</span>
-        <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" inputmode="decimal" />
-      </label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end">
+        <label class="temp-wrap">
+          <span class="label">Temperature</span>
+          <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" inputmode="decimal" />
+        </label>
+        <label class="temp-wrap">
+          <span class="label">Access Key</span>
+          <input id="accessKey" type="password" placeholder="اختياري" autocomplete="off" />
+        </label>
+      </div>
     </section>
 
     <section class="chat" id="chat">
@@ -214,6 +220,7 @@
   const newChatBtn = document.getElementById("newChatBtn");
   const statusText = document.getElementById("statusText");
   const temperatureInput = document.getElementById("temperature");
+  const accessKeyInput = document.getElementById("accessKey");
 
   let sending = false;
   let messages = loadMessages();
@@ -389,7 +396,8 @@
       const { response, data, url: proxyUsed } = await requestProxy({
         text,
         temperature,
-        conversation_id: conversationId
+        conversation_id: conversationId,
+        key: accessKeyInput?.value?.trim() || ""
       });
 
       console.log("Proxy used:", proxyUsed);
@@ -397,7 +405,11 @@
       removeTyping();
 
       if (!response.ok || data.status === false) {
-        appendError(data.error || ("خطأ HTTP " + response.status));
+        if (data.needs_key) {
+          appendError("الخدمة الخارجية تطلب مفتاح وصول. ضع المفتاح مؤقتًا في حقل Access Key أو أضفه في Vercel كمتغير ASHUR_AI_ACCESS_KEY.");
+        } else {
+          appendError(data.error || ("خطأ HTTP " + response.status));
+        }
         setStatus("حدث خطأ في الاتصال");
         return;
       }
