@@ -53,10 +53,16 @@ if (mb_strlen($text) > 12000) {
 $temperature = isset($body['temperature']) ? (float)$body['temperature'] : 0.7;
 $temperature = max(0, min(2, $temperature));
 
+$accessKey = trim((string)($body['key'] ?? ''));
+
 $params = [
     'text' => $text,
     'temperature' => $temperature
 ];
+
+if ($accessKey !== '') {
+    $params['key'] = $accessKey;
+}
 
 $conversationId = trim((string)($body['conversation_id'] ?? $body['chat_id'] ?? ''));
 
