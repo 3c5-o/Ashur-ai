@@ -206,7 +206,7 @@
 
 <script>
 (() => {
-  const PROXY_URL = "/api/chat";
+  const PROXY_CANDIDATES = ["/api/chat", "/proxy.php"];
   const chat = document.getElementById("chat");
   const emptyState = document.getElementById("emptyState");
   const input = document.getElementById("message");
@@ -318,6 +318,53 @@
     input.style.height = Math.min(input.scrollHeight, 140) + "px";
   }
 
+  async function requestProxy(payload) {
+    let lastError = null;
+
+    for (const url of PROXY_CANDIDATES) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const raw = await response.text();
+
+        let data = null;
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          const looksLikeStaticHost =
+            response.status === 404 ||
+            response.status === 405 ||
+            /^\s*</.test(raw);
+
+          if (looksLikeStaticHost) {
+            lastError = new Error(
+              "المسار " + url + " لا يعمل كبروكسي على هذه الاستضافة"
+            );
+            continue;
+          }
+
+          throw new Error(
+            "البروكسي أرجع استجابة غير صالحة: " + raw.slice(0, 250)
+          );
+        }
+
+        return { response, data, url };
+
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw new Error(
+      (lastError?.message || "لم يعمل أي مسار بروكسي") +
+      ". إذا كنت تستخدم GitHub Pages فهي استضافة ثابتة ولا تشغل Node.js أو PHP؛ انشر المشروع على Vercel أو استضافة PHP."
+    );
+  }
+
   async function sendMessage() {
     if (sending) return;
 
@@ -339,24 +386,13 @@
     addTyping();
 
     try {
-      const response = await fetch(PROXY_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          temperature,
-          conversation_id: conversationId
-        })
+      const { response, data, url: proxyUsed } = await requestProxy({
+        text,
+        temperature,
+        conversation_id: conversationId
       });
 
-      const raw = await response.text();
-      let data;
-
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error("البروكسي أرجع استجابة غير صالحة: " + raw.slice(0, 250));
-      }
+      console.log("Proxy used:", proxyUsed);
 
       removeTyping();
 
