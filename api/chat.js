@@ -1,4 +1,5 @@
-const UPSTREAM_API = "https://camillecyrm.serv00.net/GPT-5-6/api";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL = "openrouter/free";
 
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -18,6 +19,15 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
+
+    if (!apiKey) {
+      return res.status(500).json({
+        status: false,
+        error: "OPENROUTER_API_KEY غير موجود داخل إعدادات Vercel"
+      });
+    }
+
     let body = req.body || {};
 
     if (typeof body === "string") {
@@ -55,33 +65,33 @@ module.exports = async function handler(req, res) {
 
     temperature = Math.max(0, Math.min(2, temperature));
 
-    const conversationId = String(
-      body.conversation_id ||
-      body.chat_id ||
-      ""
-    ).trim();
+    const history = Array.isArray(body.history)
+      ? body.history
+          .filter(
+            item =>
+              item &&
+              (item.role === "user" || item.role === "assistant") &&
+              typeof item.content === "string"
+          )
+          .slice(-16)
+          .map(item => ({
+            role: item.role,
+            content: item.content.slice(0, 12000)
+          }))
+      : [];
 
-    const accessKey = String(
-      process.env.ASHUR_AI_ACCESS_KEY ||
-      body.key ||
-      ""
-    ).trim();
-
-    const params = new URLSearchParams();
-    params.set("text", text);
-    params.set("temperature", String(temperature));
-
-    if (accessKey) {
-      params.set("key", accessKey);
-    }
-
-    if (conversationId) {
-      params.set("conversation_id", conversationId);
-    }
-
-    if (body.link) {
-      params.set("link", String(body.link));
-    }
+    const messages = [
+      {
+        role: "system",
+        content:
+          "أنت Ashur AI، مساعد عربي واضح ومفيد. أجب باللغة التي يستخدمها المستخدم، وبالعربية العراقية عند ملاءمة السياق."
+      },
+      ...history,
+      {
+        role: "user",
+        content: text
+      }
+    ];
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 55000);
@@ -89,13 +99,20 @@ module.exports = async function handler(req, res) {
     let upstream;
 
     try {
-      upstream = await fetch(`${UPSTREAM_API}?${params.toString()}`, {
-        method: "GET",
+      upstream = await fetch(OPENROUTER_URL, {
+        method: "POST",
         headers: {
-          Accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-          "User-Agent": "Ashur-AI-Test/1.0"
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "HTTP-Referer": "https://ashur-ai1.vercel.app",
+          "X-Title": "Ashur AI"
         },
-        redirect: "follow",
+        body: JSON.stringify({
+          model: MODEL,
+          messages,
+          temperature
+        }),
         signal: controller.signal
       });
     } finally {
@@ -111,48 +128,31 @@ module.exports = async function handler(req, res) {
     } catch {
       return res.status(502).json({
         status: false,
-        error: "الخدمة الخارجية لم ترجع JSON صالح",
-        http_status: upstream.status,
-        preview: raw.slice(0, 700)
+        error: "OpenRouter أرجع استجابة غير صالحة",
+        upstream_status: upstream.status,
+        preview: raw.slice(0, 500)
       });
     }
 
     if (!upstream.ok) {
-      const upstreamError =
-        data.error ||
-        data.message ||
-        `الخدمة الخارجية أعادت HTTP ${upstream.status}`;
+      const message =
+        data?.error?.message ||
+        data?.message ||
+        `OpenRouter أعاد HTTP ${upstream.status}`;
 
-      return res.status(502).json({
+      return res.status(upstream.status >= 400 && upstream.status < 600 ? upstream.status : 502).json({
         status: false,
-        error: upstreamError,
-        upstream_status: upstream.status,
-        needs_key:
-          !accessKey &&
-          /مفتاح|key|access/i.test(String(upstreamError))
+        error: message,
+        upstream_status: upstream.status
       });
     }
 
-    const answer =
-      data.response ??
-      data.answer ??
-      data.message ??
-      data.result ??
-      null;
+    const answer = data?.choices?.[0]?.message?.content;
 
     if (!answer) {
-      const upstreamError =
-        data.error ||
-        data.message ||
-        "تم الاتصال بالخدمة لكن لم يتم العثور على نص الرد";
-
       return res.status(502).json({
         status: false,
-        error: upstreamError,
-        upstream_status: upstream.status,
-        needs_key:
-          !accessKey &&
-          /مفتاح|key|access/i.test(String(upstreamError)),
+        error: "تم الاتصال بـ OpenRouter لكن لم يصل نص الرد",
         upstream: data
       });
     }
@@ -160,27 +160,23 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       status: true,
       response: String(answer),
-      model: data.model || "GPT-5.6",
-      conversation_id:
-        data.conversation_id ||
-        data.chat_id ||
-        conversationId ||
-        null
+      model: data.model || MODEL,
+      provider: "OpenRouter"
     });
 
   } catch (error) {
     if (error?.name === "AbortError") {
       return res.status(504).json({
         status: false,
-        error: "انتهت مهلة انتظار الخدمة الخارجية"
+        error: "انتهت مهلة انتظار OpenRouter"
       });
     }
 
-    console.error("Proxy error:", error);
+    console.error("OpenRouter proxy error:", error);
 
     return res.status(500).json({
       status: false,
-      error: "تعذر الاتصال بالخدمة الخارجية",
+      error: "تعذر الاتصال بـ OpenRouter",
       details: error?.message || "Unknown error"
     });
   }
