@@ -386,7 +386,7 @@
     addTyping();
 
     try {
-      const history = messages.slice(-16).map(item => ({
+      const history = messages.slice(0, -1).slice(-16).map(item => ({
         role: item.role === "ai" ? "assistant" : "user",
         content: item.text
       }));
