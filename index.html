@@ -178,17 +178,11 @@
     </header>
 
     <section class="settings">
-      <span class="label">نسخة اختبار API</span>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end">
-        <label class="temp-wrap">
-          <span class="label">Temperature</span>
-          <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" inputmode="decimal" />
-        </label>
-        <label class="temp-wrap">
-          <span class="label">Access Key</span>
-          <input id="accessKey" type="password" placeholder="اختياري" autocomplete="off" />
-        </label>
-      </div>
+      <span class="label">OpenRouter Free</span>
+      <label class="temp-wrap">
+        <span class="label">Temperature</span>
+        <input id="temperature" type="number" value="0.7" min="0" max="2" step="0.1" inputmode="decimal" />
+      </label>
     </section>
 
     <section class="chat" id="chat">
@@ -196,7 +190,7 @@
         <div class="empty-card">
           <div class="hero">A</div>
           <h2>Ashur AI</h2>
-          <p>واجهة تجريبية بسيطة لاختبار الاتصال بالنموذج عبر بروكسي الخادم.</p>
+          <p>مساعد Ashur AI يعمل عبر OpenRouter Free.</p>
         </div>
       </div>
     </section>
@@ -212,7 +206,7 @@
 
 <script>
 (() => {
-  const PROXY_CANDIDATES = ["/api/chat", "/proxy.php"];
+  const PROXY_CANDIDATES = ["/api/chat"];
   const chat = document.getElementById("chat");
   const emptyState = document.getElementById("emptyState");
   const input = document.getElementById("message");
@@ -220,7 +214,6 @@
   const newChatBtn = document.getElementById("newChatBtn");
   const statusText = document.getElementById("statusText");
   const temperatureInput = document.getElementById("temperature");
-  const accessKeyInput = document.getElementById("accessKey");
 
   let sending = false;
   let messages = loadMessages();
@@ -393,11 +386,15 @@
     addTyping();
 
     try {
+      const history = messages.slice(-16).map(item => ({
+        role: item.role === "ai" ? "assistant" : "user",
+        content: item.text
+      }));
+
       const { response, data, url: proxyUsed } = await requestProxy({
         text,
         temperature,
-        conversation_id: conversationId,
-        key: accessKeyInput?.value?.trim() || ""
+        history
       });
 
       console.log("Proxy used:", proxyUsed);
@@ -405,11 +402,7 @@
       removeTyping();
 
       if (!response.ok || data.status === false) {
-        if (data.needs_key) {
-          appendError("الخدمة الخارجية تطلب مفتاح وصول. ضع المفتاح مؤقتًا في حقل Access Key أو أضفه في Vercel كمتغير ASHUR_AI_ACCESS_KEY.");
-        } else {
-          appendError(data.error || ("خطأ HTTP " + response.status));
-        }
+        appendError(data.error || ("خطأ HTTP " + response.status));
         setStatus("حدث خطأ في الاتصال");
         return;
       }
