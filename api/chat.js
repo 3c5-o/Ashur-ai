@@ -1,6 +1,9 @@
 const AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const AI_MODEL = "openrouter/free";
 
+const EXPERIMENTAL_HOST = "camillecyrm.serv00.net";
+const DEFAULT_EXPERIMENTAL_URL = "https://camillecyrm.serv00.net/GPT-5-6/api";
+
 const MODE_PROMPTS = {
   general: "كن مساعداً عاماً دقيقاً ومباشراً، ونظم الإجابة بحسب حاجة المستخدم.",
   writing: "ركز على الكتابة والصياغة والتحرير. قدم نصوصاً طبيعية ومتماسكة وبالأسلوب الذي يطلبه المستخدم.",
@@ -91,6 +94,154 @@ function publicError(status) {
   return "تعذر إكمال الطلب حالياً. أعد المحاولة بعد قليل.";
 }
 
+function buildCombinedText(text, attachments) {
+  let combinedText = text;
+
+  const textAttachments = attachments.filter(
+    item => item.kind === "text" && item.text
+  );
+
+  if (textAttachments.length) {
+    combinedText += "\n\n--- الملفات المرفقة ---\n";
+    for (const file of textAttachments) {
+      combinedText += `\n[ملف: ${file.name}]\n${file.text}\n`;
+    }
+  }
+
+  return combinedText;
+}
+
+function validateExperimentalUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl || DEFAULT_EXPERIMENTAL_URL);
+
+    if (parsed.protocol !== "https:") return null;
+    if (parsed.hostname !== EXPERIMENTAL_HOST) return null;
+    if (!parsed.pathname.endsWith("/api")) return null;
+
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function handleExperimentalSource({
+  res,
+  body,
+  text,
+  attachments,
+  temperature
+}) {
+  const experimental = body.experimental || {};
+  const url = validateExperimentalUrl(experimental.url);
+
+  if (!url) {
+    return res.status(400).json({
+      status: false,
+      error: "رابط المصدر التجريبي غير مسموح."
+    });
+  }
+
+  const combinedText = buildCombinedText(text, attachments).trim();
+
+  if (!combinedText) {
+    return res.status(400).json({
+      status: false,
+      error: "المصدر التجريبي يحتاج نصاً للإرسال."
+    });
+  }
+
+  const key = String(experimental.key || "").trim();
+  const conversationId = String(body.conversation_id || "").trim();
+
+  url.searchParams.set("text", combinedText);
+  url.searchParams.set("temperature", String(temperature));
+
+  if (key) {
+    url.searchParams.set("key", key);
+  }
+
+  if (conversationId) {
+    url.searchParams.set("conversation_id", conversationId);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 55000);
+
+  let upstream;
+
+  try {
+    upstream = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Accept: "application/json, text/plain;q=0.9, */*;q=0.8",
+        "User-Agent": "Ashur-AI-Experimental/1.0"
+      },
+      redirect: "follow",
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const raw = await upstream.text();
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    console.error("Experimental source invalid response:", upstream.status, raw.slice(0, 300));
+    return res.status(502).json({
+      status: false,
+      error: "المصدر التجريبي رجّع استجابة غير صالحة."
+    });
+  }
+
+  if (!upstream.ok || data.status === false) {
+    const detail = String(
+      data.error ||
+      data.message ||
+      ""
+    );
+
+    console.error("Experimental source error:", upstream.status, detail);
+
+    if (/مفتاح|key|access/i.test(detail)) {
+      return res.status(401).json({
+        status: false,
+        error: "المصدر التجريبي يحتاج مفتاح وصول صالح."
+      });
+    }
+
+    return res.status(502).json({
+      status: false,
+      error: "تعذر استخدام المصدر التجريبي حالياً."
+    });
+  }
+
+  const answer =
+    data.response ??
+    data.answer ??
+    data.message ??
+    data.result ??
+    null;
+
+  if (!answer) {
+    return res.status(502).json({
+      status: false,
+      error: "المصدر التجريبي لم يرجّع نصاً."
+    });
+  }
+
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.write(String(answer));
+  return res.end();
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -122,15 +273,6 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
-
-    if (!apiKey) {
-      return res.status(500).json({
-        status: false,
-        error: "إعداد الخدمة غير مكتمل."
-      });
-    }
-
     let body = req.body || {};
 
     if (typeof body === "string") {
@@ -165,6 +307,25 @@ module.exports = async function handler(req, res) {
     if (!Number.isFinite(temperature)) temperature = 0.7;
     temperature = Math.max(0, Math.min(1.5, temperature));
 
+    if (body.source === "experimental") {
+      return await handleExperimentalSource({
+        res,
+        body,
+        text,
+        attachments,
+        temperature
+      });
+    }
+
+    const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
+
+    if (!apiKey) {
+      return res.status(500).json({
+        status: false,
+        error: "إعداد الخدمة غير مكتمل."
+      });
+    }
+
     const mode = MODE_PROMPTS[body.mode] ? body.mode : "general";
     const history = cleanHistory(body.history);
 
@@ -177,15 +338,7 @@ module.exports = async function handler(req, res) {
       MODE_PROMPTS[mode]
     ].join(" ");
 
-    let combinedText = text;
-
-    const textAttachments = attachments.filter(item => item.kind === "text" && item.text);
-    if (textAttachments.length) {
-      combinedText += "\n\n--- الملفات المرفقة ---\n";
-      for (const file of textAttachments) {
-        combinedText += `\n[ملف: ${file.name}]\n${file.text}\n`;
-      }
-    }
+    const combinedText = buildCombinedText(text, attachments);
 
     const imageAttachments = attachments.filter(
       item =>
@@ -264,7 +417,6 @@ module.exports = async function handler(req, res) {
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("X-Accel-Buffering", "no");
 
     if (!upstream.body) {
