@@ -567,12 +567,23 @@
           ></textarea>
 
           <div class="experimental-note">
-            المفتاح يُحفظ مؤقتاً داخل جلسة المتصفح فقط. بيانات التدريب تُحفظ على هذا الجهاز للتجربة.
+            إذا تركت المفتاح فارغاً يمكن استخدام مفتاح الخادم AIGATE_API_KEY عند ضبطه في Vercel. وإذا أدخلته هنا يُحفظ مؤقتاً داخل جلسة المتصفح فقط.
           </div>
 
           <button class="test-source-btn" id="testExperimentalBtn" type="button">
             اختبار الاتصال
           </button>
+        </div>
+
+        <div class="setting-row" id="fallbackRow">
+          <div>
+            <label>الرجوع التلقائي</label>
+            <small>استخدام المصدر الأساسي إذا فشل المصدر التجريبي</small>
+          </div>
+          <label class="switch">
+            <input id="experimentalFallback" type="checkbox">
+            <span class="slider"></span>
+          </label>
         </div>
 
         <div class="setting-row">
@@ -640,6 +651,7 @@
     var experimentalKey = document.getElementById("experimentalKey");
     var experimentalTraining = document.getElementById("experimentalTraining");
     var experimentalMarkdown = document.getElementById("experimentalMarkdown");
+    var experimentalFallback = document.getElementById("experimentalFallback");
     var testExperimentalBtn = document.getElementById("testExperimentalBtn");
 
     function uid(prefix){
@@ -656,7 +668,8 @@
         experimentalUrl:"https://camillecyrm.serv00.net/v1/chat/completions",
         experimentalModel:"gpt-5-6",
         experimentalTraining:"",
-        experimentalMarkdown:""
+        experimentalMarkdown:"",
+        experimentalFallback:true
       };
     }
 
@@ -765,7 +778,9 @@
       experimentalKey.value = sessionStorage.getItem("ashur_experimental_key") || "";
       experimentalTraining.value = settings.experimentalTraining || "";
       experimentalMarkdown.value = settings.experimentalMarkdown || "";
+      experimentalFallback.checked = settings.experimentalFallback !== false;
       experimentalSettings.classList.toggle("show", sourceSetting.value === "experimental");
+      document.getElementById("fallbackRow").style.display = sourceSetting.value === "experimental" ? "flex" : "none";
     }
 
     function renderAll(){
@@ -1067,22 +1082,55 @@
         });
     }
 
-    async function streamRequest(payload,assistantMsg){
-      currentController = new AbortController();
-
-      var response = await fetch("/api/chat",{
+    async function requestChatStream(payload){
+      return fetch("/api/chat",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload),
         signal:currentController.signal
       });
+    }
 
+    async function streamRequest(payload,assistantMsg){
+      currentController = new AbortController();
+
+      var response = await requestChatStream(payload);
       var contentType = response.headers.get("content-type") || "";
 
       if(!response.ok || contentType.indexOf("application/json") !== -1){
-        var data;
-        try{data = await response.json();}catch(e){data = {};}
-        throw new Error(data.error || "تعذر إكمال الطلب.");
+        var errorData = {};
+        try{
+          errorData = await response.json();
+        }catch(e){
+          try{
+            errorData.error = await response.text();
+          }catch(ignore){}
+        }
+
+        if(
+          payload.source === "experimental" &&
+          settings.experimentalFallback !== false &&
+          !currentController.signal.aborted
+        ){
+          statusText.textContent = "إعادة المحاولة...";
+          var fallbackPayload = Object.assign({},payload,{
+            source:"default",
+            experimental:{}
+          });
+
+          response = await requestChatStream(fallbackPayload);
+          contentType = response.headers.get("content-type") || "";
+
+          if(!response.ok || contentType.indexOf("application/json") !== -1){
+            var fallbackData = {};
+            try{fallbackData = await response.json();}catch(e){}
+            throw new Error(fallbackData.error || "تعذر إكمال الطلب.");
+          }
+
+          showToast("تم إكمال الطلب عبر المسار الاحتياطي.");
+        }else{
+          throw new Error(errorData.error || "تعذر إكمال الطلب.");
+        }
       }
 
       if(!response.body){
@@ -1560,6 +1608,7 @@
       settings.source = sourceSetting.value === "experimental" ? "experimental" : "default";
       saveSettings();
       experimentalSettings.classList.toggle("show", settings.source === "experimental");
+      document.getElementById("fallbackRow").style.display = settings.source === "experimental" ? "flex" : "none";
       showToast(settings.source === "experimental" ? "تم تفعيل المصدر التجريبي." : "تم تفعيل المصدر الأساسي.");
     });
 
@@ -1586,6 +1635,11 @@
 
     experimentalMarkdown.addEventListener("input",function(){
       settings.experimentalMarkdown = experimentalMarkdown.value.slice(0,30000);
+      saveSettings();
+    });
+
+    experimentalFallback.addEventListener("change",function(){
+      settings.experimentalFallback = experimentalFallback.checked;
       saveSettings();
     });
 
