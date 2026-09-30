@@ -1456,7 +1456,7 @@
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
             prompt:promptText,
-            model:forcedModel || settings.imageModel || "auto",
+            model:forcedModel || "auto",
             key:sessionStorage.getItem("ashur_experimental_key") || ""
           }),
           signal:currentController.signal
