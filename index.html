@@ -200,19 +200,58 @@
       direction:ltr;unicode-bidi:embed;
     }
     .code-wrap{
-      margin:10px 0;border:1px solid var(--line);border-radius:13px;overflow:hidden;
-      background:#0a0d0c;direction:ltr;
+      margin:12px 0;border:1px solid #2b3731;border-radius:16px;overflow:hidden;
+      background:#090d0b;direction:ltr;box-shadow:0 12px 32px rgba(0,0,0,.22);
+      position:relative;
     }
-    [data-theme="light"] .code-wrap{background:#151a18}
+    [data-theme="light"] .code-wrap{background:#121714}
     .code-head{
-      display:flex;justify-content:space-between;align-items:center;
-      padding:7px 10px;border-bottom:1px solid #26312c;color:#9fb0a7;font-size:11px;
+      min-height:44px;display:flex;justify-content:space-between;align-items:center;gap:10px;
+      padding:8px 10px;border-bottom:1px solid #26312c;color:#aab9b1;font-size:11px;
+      background:linear-gradient(180deg,#121915,#0d120f);position:sticky;top:0;z-index:2;
     }
-    .copy-code{
-      border:0;background:transparent;color:#b7c5be;font-size:11px;
+    .code-meta{display:flex;align-items:center;gap:8px;min-width:0}
+    .code-lang{
+      display:inline-flex;align-items:center;min-height:26px;padding:0 9px;
+      border:1px solid #334039;border-radius:8px;color:#dce7e1;background:#18201c;
+      font-weight:700;text-transform:lowercase;
     }
-    pre{margin:0;padding:12px;overflow:auto;color:#eef4f1;line-height:1.65}
-    pre code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}
+    .code-lines-count{color:#7f9087;white-space:nowrap}
+    .code-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+    .code-action{
+      border:1px solid #334039;background:#151c18;color:#c1cec7;
+      border-radius:8px;padding:5px 8px;font-size:10px;
+    }
+    .code-action:hover{background:#202a25;color:#fff}
+    .code-scroll{
+      display:grid;grid-template-columns:auto minmax(0,1fr);
+      max-height:560px;overflow:auto;
+    }
+    .code-wrap.expanded{
+      position:fixed;inset:14px;z-index:120;margin:0;border-radius:18px;
+      display:flex;flex-direction:column;max-height:none;
+    }
+    .code-wrap.expanded .code-scroll{max-height:none;flex:1}
+    .line-numbers{
+      padding:12px 10px 18px 12px;text-align:right;user-select:none;
+      color:#536159;background:#0c110e;border-right:1px solid #202a25;
+      font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+      font-size:12px;line-height:1.7;white-space:pre;
+    }
+    pre{margin:0;padding:12px 14px 18px;overflow:visible;color:#eef4f1;line-height:1.7;min-width:max-content}
+    pre code{
+      font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+      font-size:12px;tab-size:2;white-space:pre;
+    }
+    .generated-image{
+      width:min(560px,100%);border-radius:18px;border:1px solid var(--line);
+      display:block;background:var(--panel2);box-shadow:var(--shadow);
+    }
+    .image-actions{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+    .image-actions a,.image-actions button{
+      border:1px solid var(--line);background:var(--panel2);color:var(--text);
+      border-radius:10px;padding:7px 10px;font-size:11px;text-decoration:none;
+    }
     .msg-actions{
       display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;opacity:.8;
     }
@@ -270,7 +309,24 @@
       flex:0 0 auto;
     }
     .send-btn.stop{background:var(--danger);color:white}
-    .composer-note{text-align:center;color:var(--muted);font-size:10px;margin-top:6px}
+    .composer-note{
+      width:min(860px,100%);margin:6px auto 0;display:flex;justify-content:space-between;gap:10px;
+      color:var(--muted);font-size:10px;padding-inline:4px
+    }
+    .composer-note .usage{white-space:nowrap}
+    .image-form textarea{
+      width:100%;min-height:120px;resize:vertical;border:1px solid var(--line);
+      border-radius:13px;background:var(--panel2);color:var(--text);padding:12px;
+      outline:none;line-height:1.6;
+    }
+    .image-form select{
+      width:100%;height:42px;border:1px solid var(--line);border-radius:11px;
+      background:var(--panel2);color:var(--text);padding:0 10px;margin-top:10px;
+    }
+    .primary-btn{
+      width:100%;height:44px;border:0;border-radius:12px;background:var(--accent);
+      color:#07110b;font-weight:800;margin-top:12px;
+    }
     .backdrop{display:none}
     .modal{
       position:fixed;inset:0;z-index:80;display:none;
@@ -463,11 +519,18 @@
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
           </button>
 
-          <textarea id="messageInput" rows="1" maxlength="16000" placeholder="اكتب رسالتك..."></textarea>
+          <button class="icon-btn" id="imageBtn" aria-label="إنشاء صورة">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 15-4-4L7 20"/></svg>
+          </button>
+
+          <textarea id="messageInput" rows="1" maxlength="180000" placeholder="اكتب رسالتك أو الصق كوداً طويلاً..."></textarea>
 
           <button class="send-btn" id="sendBtn" aria-label="إرسال">↑</button>
         </div>
-        <div class="composer-note">قد يخطئ الذكاء الاصطناعي؛ راجع المعلومات المهمة.</div>
+        <div class="composer-note">
+          <span>قد يخطئ الذكاء الاصطناعي؛ راجع المعلومات المهمة.</span>
+          <span class="usage" id="inputUsage">0 حرف · 1 سطر</span>
+        </div>
       </div>
     </main>
   </div>
@@ -587,6 +650,29 @@
         </div>
 
         <div class="setting-row">
+          <div>
+            <label>إخراج برمجي طويل</label>
+            <small>يكمل الكود تلقائياً داخل نفس الرسالة عند الحاجة</small>
+          </div>
+          <label class="switch">
+            <input id="longOutputSetting" type="checkbox">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div>
+            <label>أقصى تكملات تلقائية</label>
+            <small>للمشاريع والأكواد الطويلة جداً</small>
+          </div>
+          <select id="continuationSetting">
+            <option value="3">3</option>
+            <option value="6">6</option>
+            <option value="8">8</option>
+          </select>
+        </div>
+
+        <div class="setting-row">
           <div><label>Enter للإرسال</label><small>Shift + Enter لسطر جديد</small></div>
           <label class="switch">
             <input id="enterSetting" type="checkbox">
@@ -601,6 +687,25 @@
 
         <div style="height:14px"></div>
         <button class="danger-btn" id="clearAllBtn">حذف جميع المحادثات من هذا الجهاز</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="imageModal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3>إنشاء صورة</h3>
+        <button class="icon-btn" id="closeImageModal" aria-label="إغلاق">×</button>
+      </div>
+      <div class="modal-body image-form">
+        <textarea id="imagePrompt" maxlength="5000" placeholder="اوصف الصورة بالتفصيل..."></textarea>
+        <select id="imageModel">
+          <option value="flux">عام</option>
+          <option value="flux-realism">واقعي</option>
+          <option value="flux-anime">أنمي</option>
+          <option value="sana">تفاصيل عالية</option>
+        </select>
+        <button class="primary-btn" id="generateImageBtn" type="button">إنشاء الصورة</button>
       </div>
     </div>
   </div>
@@ -636,6 +741,12 @@
     var sendBtn = document.getElementById("sendBtn");
     var attachBtn = document.getElementById("attachBtn");
     var voiceBtn = document.getElementById("voiceBtn");
+    var imageBtn = document.getElementById("imageBtn");
+    var inputUsage = document.getElementById("inputUsage");
+    var imageModal = document.getElementById("imageModal");
+    var imagePrompt = document.getElementById("imagePrompt");
+    var imageModel = document.getElementById("imageModel");
+    var generateImageBtn = document.getElementById("generateImageBtn");
     var fileInput = document.getElementById("fileInput");
     var attachmentBar = document.getElementById("attachmentBar");
     var toastEl = document.getElementById("toast");
@@ -644,6 +755,8 @@
     var fontSetting = document.getElementById("fontSetting");
     var tempSetting = document.getElementById("tempSetting");
     var enterSetting = document.getElementById("enterSetting");
+    var longOutputSetting = document.getElementById("longOutputSetting");
+    var continuationSetting = document.getElementById("continuationSetting");
     var sourceSetting = document.getElementById("sourceSetting");
     var experimentalSettings = document.getElementById("experimentalSettings");
     var experimentalUrl = document.getElementById("experimentalUrl");
@@ -664,6 +777,9 @@
         fontSize:15,
         temperature:0.7,
         enterToSend:true,
+        longOutput:true,
+        maxContinuations:6,
+        imageModel:"flux",
         source:"default",
         experimentalUrl:"https://camillecyrm.serv00.net/v1/chat/completions",
         experimentalModel:"gpt-5-6",
@@ -719,7 +835,20 @@
 
     function saveState(){
       state.activeId = activeId;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      try{
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }catch(error){
+        try{
+          state.chats = state.chats
+            .sort(function(a,b){return b.updatedAt - a.updatedAt;})
+            .slice(0,12);
+          state.chats.forEach(function(chat){
+            if(chat.messages.length > 60) chat.messages = chat.messages.slice(-60);
+          });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          showToast("تم تنظيف أقدم المحادثات للحفاظ على مساحة التخزين.");
+        }catch(ignore){}
+      }
     }
 
     function currentChat(){
@@ -772,6 +901,9 @@
       fontSetting.value = settings.fontSize;
       tempSetting.value = settings.temperature;
       enterSetting.checked = !!settings.enterToSend;
+      longOutputSetting.checked = settings.longOutput !== false;
+      continuationSetting.value = String(settings.maxContinuations || 6);
+      imageModel.value = settings.imageModel || "flux";
       sourceSetting.value = settings.source === "experimental" ? "experimental" : "default";
       experimentalUrl.value = settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions";
       experimentalModel.value = settings.experimentalModel || "gpt-5-6";
@@ -877,28 +1009,51 @@
         .replace(/"/g,"&quot;");
     }
 
+    function codeExtension(lang){
+      var map = {
+        javascript:"js",js:"js",typescript:"ts",ts:"ts",python:"py",py:"py",
+        html:"html",css:"css",json:"json",java:"java",kotlin:"kt",dart:"dart",
+        php:"php",sql:"sql",bash:"sh",shell:"sh",c:"c",cpp:"cpp",csharp:"cs",
+        go:"go",rust:"rs",swift:"swift",xml:"xml",yaml:"yml",yml:"yml"
+      };
+      return map[String(lang || "").toLowerCase()] || "txt";
+    }
+
     function renderMarkdown(text){
       var source = String(text || "");
       var blocks = [];
 
       source = source.replace(/\`\`\`([^\n]*)\n?([\s\S]*?)\`\`\`/g,function(_,lang,code){
         var idx = blocks.length;
-        var safeLang = escapeHtml((lang || "code").trim() || "code");
-        var safeCode = escapeHtml(code.replace(/^\n/,""));
+        var normalizedLang = (lang || "code").trim() || "code";
+        var cleanCode = code.replace(/^\n/,"").replace(/\n$/,"");
+        var lineCount = cleanCode ? cleanCode.split("\n").length : 1;
+        var numbers = Array.from({length:lineCount},function(_,i){return i+1;}).join("\n");
+
         blocks.push(
-          '<div class="code-wrap"><div class="code-head"><span>' +
-          safeLang +
-          '</span><button class="copy-code" data-code-index="' +
-          idx +
-          '">نسخ</button></div><pre><code>' +
-          safeCode +
-          '</code></pre></div>'
+          '<div class="code-wrap" data-lang="' + escapeHtml(normalizedLang) + '">' +
+            '<div class="code-head">' +
+              '<div class="code-meta">' +
+                '<span class="code-lang">' + escapeHtml(normalizedLang) + '</span>' +
+                '<span class="code-lines-count">' + lineCount + ' سطر</span>' +
+              '</div>' +
+              '<div class="code-actions">' +
+                '<button class="code-action" data-code-action="copy">نسخ</button>' +
+                '<button class="code-action" data-code-action="download">تنزيل</button>' +
+                '<button class="code-action" data-code-action="expand">تكبير</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="code-scroll">' +
+              '<div class="line-numbers">' + numbers + '</div>' +
+              '<pre><code>' + escapeHtml(cleanCode) + '</code></pre>' +
+            '</div>' +
+          '</div>'
         );
+
         return "@@CODE_" + idx + "@@";
       });
 
       source = escapeHtml(source);
-
       source = source.replace(/^### (.+)$/gm,"<h3>$1</h3>");
       source = source.replace(/^## (.+)$/gm,"<h2>$1</h2>");
       source = source.replace(/^# (.+)$/gm,"<h1>$1</h1>");
@@ -965,11 +1120,20 @@
       bubble.className = "bubble";
 
       if(msg.role === "assistant"){
-        bubble.innerHTML = renderMarkdown(msg.text || "");
-        if(msg.streaming){
-          var caret = document.createElement("span");
-          caret.className = "typing-caret";
-          bubble.appendChild(caret);
+        if(msg.image){
+          bubble.innerHTML =
+            '<img class="generated-image" src="' + escapeHtml(msg.image) + '" alt="صورة مولدة">' +
+            '<div class="image-actions">' +
+              '<a href="' + escapeHtml(msg.image) + '" target="_blank" rel="noopener noreferrer">فتح الصورة</a>' +
+              '<button type="button" data-image-download="' + escapeHtml(msg.image) + '">تنزيل</button>' +
+            '</div>';
+        }else{
+          bubble.innerHTML = renderMarkdown(msg.text || "");
+          if(msg.streaming){
+            var caret = document.createElement("span");
+            caret.className = "typing-caret";
+            bubble.appendChild(caret);
+          }
         }
       }else{
         bubble.textContent = msg.text || "";
@@ -1046,6 +1210,9 @@
     function resizeInput(){
       input.style.height = "auto";
       input.style.height = Math.min(input.scrollHeight,150) + "px";
+      var text = input.value || "";
+      var lines = text ? text.split("\n").length : 1;
+      inputUsage.textContent = text.length.toLocaleString("en-US") + " حرف · " + lines.toLocaleString("en-US") + " سطر";
     }
 
     function setGenerating(value){
@@ -1076,7 +1243,7 @@
       return chat.messages
         .slice(0,stopIndex)
         .filter(function(m){return !m.streaming && (m.role === "user" || m.role === "assistant");})
-        .slice(-18)
+        .slice(-24)
         .map(function(m){
           return {role:m.role,content:String(m.text || "")};
         });
@@ -1091,9 +1258,32 @@
       });
     }
 
-    async function streamRequest(payload,assistantMsg){
-      currentController = new AbortController();
+    async function consumeResponse(response,assistantMsg){
+      if(!response.body) throw new Error("تعذر بدء الرد.");
 
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var lastSave = 0;
+
+      while(true){
+        var part = await reader.read();
+        if(part.done) break;
+
+        var chunk = decoder.decode(part.value,{stream:true});
+        if(chunk){
+          assistantMsg.text += chunk;
+          refreshMessage(assistantMsg);
+          scrollBottom(false);
+
+          if(Date.now() - lastSave > 900){
+            saveState();
+            lastSave = Date.now();
+          }
+        }
+      }
+    }
+
+    async function getValidResponse(payload){
       var response = await requestChatStream(payload);
       var contentType = response.headers.get("content-type") || "";
 
@@ -1101,11 +1291,7 @@
         var errorData = {};
         try{
           errorData = await response.json();
-        }catch(e){
-          try{
-            errorData.error = await response.text();
-          }catch(ignore){}
-        }
+        }catch(e){}
 
         if(
           payload.source === "experimental" &&
@@ -1128,33 +1314,56 @@
           }
 
           showToast("تم إكمال الطلب عبر المسار الاحتياطي.");
-        }else{
-          throw new Error(errorData.error || "تعذر إكمال الطلب.");
+          return {response:response,payload:fallbackPayload};
         }
+
+        throw new Error(errorData.error || "تعذر إكمال الطلب.");
       }
 
-      if(!response.body){
-        throw new Error("تعذر بدء الرد.");
-      }
+      return {response:response,payload:payload};
+    }
 
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var lastSave = 0;
+    async function streamRequest(payload,assistantMsg){
+      currentController = new AbortController();
 
-      while(true){
-        var part = await reader.read();
-        if(part.done) break;
+      var maxParts = Math.max(1,Math.min(8,Number(settings.maxContinuations || 6)));
+      var part = 1;
+      var activePayload = payload;
 
-        var chunk = decoder.decode(part.value,{stream:true});
-        if(chunk){
-          assistantMsg.text += chunk;
-          refreshMessage(assistantMsg);
-          scrollBottom(false);
+      while(part <= maxParts){
+        var result = await getValidResponse(activePayload);
+        await consumeResponse(result.response,assistantMsg);
 
-          if(Date.now() - lastSave > 900){
-            saveState();
-            lastSave = Date.now();
-          }
+        if(currentController.signal.aborted) break;
+
+        var doneMarker = /\[\[ASHUR_DONE\]\]/g;
+        var continueMarker = /\[\[ASHUR_CONTINUE\]\]/g;
+        var hasDone = doneMarker.test(assistantMsg.text);
+        var hasContinue = continueMarker.test(assistantMsg.text);
+
+        assistantMsg.text = assistantMsg.text
+          .replace(doneMarker,"")
+          .replace(continueMarker,"")
+          .trimEnd();
+
+        refreshMessage(assistantMsg);
+
+        if(!payload.long_output || hasDone) break;
+        if(part >= maxParts) break;
+
+        part += 1;
+        statusText.textContent = "جاري تكملة الكود " + part + "/" + maxParts + "...";
+
+        activePayload = Object.assign({},result.payload,{
+          continuation:{
+            part:part,
+            tail:assistantMsg.text.slice(-30000)
+          },
+          attachments:[]
+        });
+
+        if(!hasContinue && assistantMsg.text.length < 8000){
+          break;
         }
       }
     }
@@ -1223,6 +1432,7 @@
           text:userMsg.text,
           mode:chat.mode || "general",
           temperature:Number(settings.temperature),
+          long_output:(chat.mode === "coding") && settings.longOutput !== false,
           source:settings.source === "experimental" ? "experimental" : "default",
           experimental:{
             url:settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions",
@@ -1382,46 +1592,84 @@
       });
     }
 
+    function compressImage(file){
+      return new Promise(function(resolve,reject){
+        var img = new Image();
+        var url = URL.createObjectURL(file);
+
+        img.onload = function(){
+          try{
+            var maxSide = 1600;
+            var scale = Math.min(1,maxSide/Math.max(img.width,img.height));
+            var width = Math.max(1,Math.round(img.width*scale));
+            var height = Math.max(1,Math.round(img.height*scale));
+            var canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            var ctx = canvas.getContext("2d");
+            ctx.drawImage(img,0,0,width,height);
+
+            var quality = 0.86;
+            var data = canvas.toDataURL("image/jpeg",quality);
+
+            while(data.length > 2800000 && quality > 0.48){
+              quality -= 0.1;
+              data = canvas.toDataURL("image/jpeg",quality);
+            }
+
+            URL.revokeObjectURL(url);
+            resolve(data);
+          }catch(error){
+            URL.revokeObjectURL(url);
+            reject(error);
+          }
+        };
+
+        img.onerror = function(){
+          URL.revokeObjectURL(url);
+          reject(new Error("تعذر قراءة الصورة"));
+        };
+
+        img.src = url;
+      });
+    }
+
     async function readPdf(file){
       if(!window.pdfjsLib) throw new Error("قارئ PDF لم يكتمل تحميله.");
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
       var buffer = await file.arrayBuffer();
       var pdf = await window.pdfjsLib.getDocument({data:buffer}).promise;
-      var maxPages = Math.min(pdf.numPages,30);
+      var maxPages = Math.min(pdf.numPages,50);
       var result = "";
 
       for(var p=1;p<=maxPages;p++){
         var page = await pdf.getPage(p);
         var content = await page.getTextContent();
         result += "\n[صفحة " + p + "]\n" + content.items.map(function(x){return x.str;}).join(" ") + "\n";
-        if(result.length > 22000) break;
+        if(result.length > 100000) break;
       }
 
-      return result.slice(0,22000);
+      return result.slice(0,100000);
     }
 
     async function handleFiles(files){
-      var list = Array.from(files || []).slice(0,4);
+      var list = Array.from(files || []).slice(0,6);
 
       for(var i=0;i<list.length;i++){
         var file = list[i];
 
         try{
           if(file.type.indexOf("image/") === 0){
-            if(file.size > 2000000){
-              showToast("الصورة " + file.name + " أكبر من 2MB.");
-              continue;
-            }
-
+            showToast("جاري تجهيز الصورة...");
             pendingAttachments.push({
               kind:"image",
               name:file.name,
-              data:await fileToDataUrl(file)
+              data:await compressImage(file)
             });
 
           }else if(file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
-            if(file.size > 6000000){
+            if(file.size > 12000000){
               showToast("ملف PDF كبير جداً.");
               continue;
             }
@@ -1434,7 +1682,7 @@
             });
 
           }else{
-            if(file.size > 1200000){
+            if(file.size > 4000000){
               showToast("الملف " + file.name + " كبير جداً.");
               continue;
             }
@@ -1443,7 +1691,7 @@
             pendingAttachments.push({
               kind:"text",
               name:file.name,
-              text:text.slice(0,22000)
+              text:text.slice(0,100000)
             });
           }
         }catch(e){
@@ -1453,6 +1701,74 @@
 
       fileInput.value = "";
       renderAttachments();
+    }
+
+    async function generateImage(){
+      var prompt = imagePrompt.value.trim();
+      if(!prompt){
+        showToast("اكتب وصف الصورة أولاً.");
+        return;
+      }
+
+      var key = sessionStorage.getItem("ashur_experimental_key") || "";
+      var old = generateImageBtn.textContent;
+      generateImageBtn.disabled = true;
+      generateImageBtn.textContent = "جاري الإنشاء...";
+
+      try{
+        var response = await fetch("/api/image",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            prompt:prompt,
+            model:imageModel.value || settings.imageModel || "flux",
+            key:key
+          })
+        });
+
+        var data = {};
+        try{data = await response.json();}catch(e){}
+
+        if(!response.ok || !data.status || !data.image){
+          throw new Error(data.error || "تعذر إنشاء الصورة.");
+        }
+
+        settings.imageModel = imageModel.value || "flux";
+        saveSettings();
+
+        var chat = currentChat();
+        if(chat.title === "محادثة جديدة") chat.title = autoTitle("صورة: " + prompt);
+
+        chat.messages.push({
+          id:uid("msg"),
+          role:"user",
+          text:"إنشاء صورة: " + prompt,
+          time:Date.now(),
+          attachments:[]
+        });
+
+        chat.messages.push({
+          id:uid("msg"),
+          role:"assistant",
+          text:"",
+          image:data.image,
+          time:Date.now(),
+          attachments:[],
+          streaming:false
+        });
+
+        chat.updatedAt = Date.now();
+        saveState();
+        renderAll();
+        imagePrompt.value = "";
+        imageModal.classList.remove("open");
+        scrollBottom();
+      }catch(error){
+        showToast(error.message || "تعذر إنشاء الصورة.");
+      }finally{
+        generateImageBtn.disabled = false;
+        generateImageBtn.textContent = old;
+      }
     }
 
     function startVoice(){
@@ -1558,6 +1874,18 @@
     attachBtn.addEventListener("click",function(){fileInput.click();});
     fileInput.addEventListener("change",function(){handleFiles(fileInput.files);});
     voiceBtn.addEventListener("click",startVoice);
+    imageBtn.addEventListener("click",function(){
+      imageModel.value = settings.imageModel || "flux";
+      imageModal.classList.add("open");
+      setTimeout(function(){imagePrompt.focus();},50);
+    });
+    document.getElementById("closeImageModal").addEventListener("click",function(){
+      imageModal.classList.remove("open");
+    });
+    imageModal.addEventListener("click",function(e){
+      if(e.target === imageModal) imageModal.classList.remove("open");
+    });
+    generateImageBtn.addEventListener("click",generateImage);
 
     messagesEl.addEventListener("click",function(e){
       var actionBtn = e.target.closest("[data-action]");
@@ -1566,11 +1894,43 @@
         return;
       }
 
-      var codeBtn = e.target.closest(".copy-code");
+      var codeBtn = e.target.closest("[data-code-action]");
       if(codeBtn){
         var wrap = codeBtn.closest(".code-wrap");
         var code = wrap ? wrap.querySelector("code") : null;
-        if(code) copyText(code.textContent);
+        if(!wrap || !code) return;
+
+        var action = codeBtn.dataset.codeAction;
+        if(action === "copy"){
+          copyText(code.textContent);
+        }else if(action === "download"){
+          var lang = wrap.dataset.lang || "txt";
+          var blob = new Blob([code.textContent],{type:"text/plain;charset=utf-8"});
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "ashur-code." + codeExtension(lang);
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function(){URL.revokeObjectURL(url);},1000);
+        }else if(action === "expand"){
+          var expanded = wrap.classList.toggle("expanded");
+          codeBtn.textContent = expanded ? "تصغير" : "تكبير";
+        }
+        return;
+      }
+
+      var imageDownload = e.target.closest("[data-image-download]");
+      if(imageDownload){
+        var imageUrl = imageDownload.dataset.imageDownload;
+        var a = document.createElement("a");
+        a.href = imageUrl;
+        a.download = "ashur-image.png";
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
       }
     });
 
@@ -1604,6 +1964,16 @@
       saveSettings();
     });
 
+    longOutputSetting.addEventListener("change",function(){
+      settings.longOutput = longOutputSetting.checked;
+      saveSettings();
+    });
+
+    continuationSetting.addEventListener("change",function(){
+      settings.maxContinuations = Number(continuationSetting.value) || 6;
+      saveSettings();
+    });
+
     sourceSetting.addEventListener("change",function(){
       settings.source = sourceSetting.value === "experimental" ? "experimental" : "default";
       saveSettings();
@@ -1629,12 +1999,12 @@
     });
 
     experimentalTraining.addEventListener("input",function(){
-      settings.experimentalTraining = experimentalTraining.value.slice(0,30000);
+      settings.experimentalTraining = experimentalTraining.value.slice(0,60000);
       saveSettings();
     });
 
     experimentalMarkdown.addEventListener("input",function(){
-      settings.experimentalMarkdown = experimentalMarkdown.value.slice(0,30000);
+      settings.experimentalMarkdown = experimentalMarkdown.value.slice(0,60000);
       saveSettings();
     });
 
