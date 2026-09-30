@@ -2,7 +2,34 @@ const AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const AI_MODEL = "openrouter/free";
 
 const EXPERIMENTAL_HOST = "camillecyrm.serv00.net";
-const DEFAULT_EXPERIMENTAL_URL = "https://camillecyrm.serv00.net/GPT-5-6/api";
+const DEFAULT_EXPERIMENTAL_URL = "https://camillecyrm.serv00.net/v1/chat/completions";
+const ALLOWED_EXPERIMENTAL_MODELS = new Set([
+  "auto",
+  "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
+  "gpt-5-6",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "gpt-4o",
+  "gpt-4o-mini",
+  "gpt-4.1-nano",
+  "o1",
+  "o1-mini",
+  "o3-mini",
+  "deepseek-v3.2",
+  "qwen-30b",
+  "llama-3.3-70b-instruct",
+  "gemma-4",
+  "doubao-seed-2.0-code",
+  "doubao-seed-2.0-pro",
+  "doubao-seed-2.0-lite",
+  "doubao-seed-2.0-mini",
+  "deepai-standard",
+  "deepai-online",
+  "gemini-web",
+  "claude-3-5-sonnet"
+]);
 
 const MODE_PROMPTS = {
   general: "كن مساعداً عاماً دقيقاً ومباشراً، ونظم الإجابة بحسب حاجة المستخدم.",
@@ -111,19 +138,73 @@ function buildCombinedText(text, attachments) {
   return combinedText;
 }
 
+function buildSystemPrompt(mode) {
+  return [
+    "أنت Ashur AI، مساعد ذكي سريع وواضح.",
+    "أجب باللغة التي يستخدمها المستخدم، واستخدم العربية العراقية عندما يلائم السياق.",
+    "لا تذكر اسم مزود النموذج أو المنصة الخلفية أو اسم النموذج أو أي تفاصيل تقنية داخلية.",
+    "لا تضف عبارة من قبيل: المصدر، المزود، النموذج المستخدم، أو معلومات النظام.",
+    "استخدم Markdown عند الحاجة، ونسق الأكواد داخل كتل كود.",
+    MODE_PROMPTS[mode] || MODE_PROMPTS.general
+  ].join(" ");
+}
+
 function validateExperimentalUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl || DEFAULT_EXPERIMENTAL_URL);
 
     if (parsed.protocol !== "https:") return null;
     if (parsed.hostname !== EXPERIMENTAL_HOST) return null;
-    if (!parsed.pathname.endsWith("/api")) return null;
+    if (parsed.pathname !== "/v1/chat/completions") return null;
 
     parsed.search = "";
     parsed.hash = "";
-    return parsed;
+    return parsed.toString();
   } catch {
     return null;
+  }
+}
+
+async function streamOpenAICompatibleResponse(upstream, res) {
+  if (!upstream.body) {
+    res.write("تعذر بدء الرد حالياً.");
+    return;
+  }
+
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let wroteContent = false;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+
+      try {
+        const data = JSON.parse(payload);
+        const chunk = data?.choices?.[0]?.delta?.content;
+
+        if (typeof chunk === "string" && chunk) {
+          wroteContent = true;
+          res.write(chunk);
+        }
+      } catch {}
+    }
+  }
+
+  if (!wroteContent) {
+    res.write("تعذر إنشاء الرد حالياً. أعد المحاولة.");
   }
 }
 
@@ -132,15 +213,46 @@ async function handleExperimentalSource({
   body,
   text,
   attachments,
-  temperature
+  temperature,
+  mode,
+  history
 }) {
   const experimental = body.experimental || {};
-  const url = validateExperimentalUrl(experimental.url);
+  const endpoint = validateExperimentalUrl(experimental.url);
 
-  if (!url) {
+  if (!endpoint) {
     return res.status(400).json({
       status: false,
       error: "رابط المصدر التجريبي غير مسموح."
+    });
+  }
+
+  const key = String(
+    process.env.AIGATE_API_KEY ||
+    experimental.key ||
+    ""
+  ).trim();
+
+  if (!key) {
+    return res.status(401).json({
+      status: false,
+      error: "المصدر التجريبي يحتاج مفتاح وصول."
+    });
+  }
+
+  const requestedModel = String(experimental.model || "gpt-5-6").trim();
+  const model = ALLOWED_EXPERIMENTAL_MODELS.has(requestedModel)
+    ? requestedModel
+    : "gpt-5-6";
+
+  const training = String(experimental.training || "").slice(0, 30000);
+  const markdown = String(experimental.md || "").slice(0, 30000);
+
+  const imageAttachments = attachments.filter(item => item.kind === "image");
+  if (imageAttachments.length) {
+    return res.status(400).json({
+      status: false,
+      error: "رفع الصور غير مفعّل بعد على المصدر التجريبي."
     });
   }
 
@@ -153,19 +265,21 @@ async function handleExperimentalSource({
     });
   }
 
-  const key = String(experimental.key || "").trim();
-  const conversationId = String(body.conversation_id || "").trim();
+  const messages = [
+    { role: "system", content: buildSystemPrompt(mode) },
+    ...history,
+    { role: "user", content: combinedText }
+  ];
 
-  url.searchParams.set("text", combinedText);
-  url.searchParams.set("temperature", String(temperature));
+  const requestBody = {
+    model,
+    messages,
+    temperature,
+    stream: true
+  };
 
-  if (key) {
-    url.searchParams.set("key", key);
-  }
-
-  if (conversationId) {
-    url.searchParams.set("conversation_id", conversationId);
-  }
+  if (training) requestBody.training = training;
+  if (markdown) requestBody.md = markdown;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 55000);
@@ -173,72 +287,60 @@ async function handleExperimentalSource({
   let upstream;
 
   try {
-    upstream = await fetch(url.toString(), {
-      method: "GET",
+    upstream = await fetch(endpoint, {
+      method: "POST",
       headers: {
-        Accept: "application/json, text/plain;q=0.9, */*;q=0.8",
-        "User-Agent": "Ashur-AI-Experimental/1.0"
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        Accept: "text/event-stream"
       },
-      redirect: "follow",
+      body: JSON.stringify(requestBody),
       signal: controller.signal
     });
-  } finally {
+  } catch (error) {
     clearTimeout(timeout);
+    throw error;
   }
 
-  const raw = await upstream.text();
+  if (!upstream.ok) {
+    clearTimeout(timeout);
 
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    console.error("Experimental source invalid response:", upstream.status, raw.slice(0, 300));
-    return res.status(502).json({
-      status: false,
-      error: "المصدر التجريبي رجّع استجابة غير صالحة."
-    });
-  }
+    let detail = "";
+    try {
+      const data = await upstream.json();
+      detail = String(
+        data?.error?.message ||
+        data?.error ||
+        data?.message ||
+        ""
+      );
+    } catch {}
 
-  if (!upstream.ok || data.status === false) {
-    const detail = String(
-      data.error ||
-      data.message ||
-      ""
-    );
+    console.error("Experimental AI error:", upstream.status, detail);
 
-    console.error("Experimental source error:", upstream.status, detail);
-
-    if (/مفتاح|key|access/i.test(detail)) {
+    if (upstream.status === 401 || /مفتاح|key|access|unauthorized/i.test(detail)) {
       return res.status(401).json({
         status: false,
-        error: "المصدر التجريبي يحتاج مفتاح وصول صالح."
+        error: "المصدر التجريبي رفض مفتاح الوصول."
       });
     }
 
-    return res.status(502).json({
+    return res.status(upstream.status).json({
       status: false,
-      error: "تعذر استخدام المصدر التجريبي حالياً."
-    });
-  }
-
-  const answer =
-    data.response ??
-    data.answer ??
-    data.message ??
-    data.result ??
-    null;
-
-  if (!answer) {
-    return res.status(502).json({
-      status: false,
-      error: "المصدر التجريبي لم يرجّع نصاً."
+      error: publicError(upstream.status)
     });
   }
 
   res.statusCode = 200;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("X-Accel-Buffering", "no");
-  res.write(String(answer));
+
+  try {
+    await streamOpenAICompatibleResponse(upstream, res);
+  } finally {
+    clearTimeout(timeout);
+  }
+
   return res.end();
 }
 
@@ -307,13 +409,18 @@ module.exports = async function handler(req, res) {
     if (!Number.isFinite(temperature)) temperature = 0.7;
     temperature = Math.max(0, Math.min(1.5, temperature));
 
+    const mode = MODE_PROMPTS[body.mode] ? body.mode : "general";
+    const history = cleanHistory(body.history);
+
     if (body.source === "experimental") {
       return await handleExperimentalSource({
         res,
         body,
         text,
         attachments,
-        temperature
+        temperature,
+        mode,
+        history
       });
     }
 
@@ -325,18 +432,6 @@ module.exports = async function handler(req, res) {
         error: "إعداد الخدمة غير مكتمل."
       });
     }
-
-    const mode = MODE_PROMPTS[body.mode] ? body.mode : "general";
-    const history = cleanHistory(body.history);
-
-    const systemPrompt = [
-      "أنت Ashur AI، مساعد ذكي سريع وواضح.",
-      "أجب باللغة التي يستخدمها المستخدم، واستخدم العربية العراقية عندما يلائم السياق.",
-      "لا تذكر اسم مزود النموذج أو المنصة الخلفية أو اسم النموذج أو أي تفاصيل تقنية داخلية.",
-      "لا تضف عبارة من قبيل: المصدر، المزود، النموذج المستخدم، أو معلومات النظام.",
-      "استخدم Markdown عند الحاجة، ونسق الأكواد داخل كتل كود.",
-      MODE_PROMPTS[mode]
-    ].join(" ");
 
     const combinedText = buildCombinedText(text, attachments);
 
@@ -365,7 +460,7 @@ module.exports = async function handler(req, res) {
     }
 
     const messages = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: buildSystemPrompt(mode) },
       ...history,
       { role: "user", content: userContent }
     ];
@@ -419,51 +514,10 @@ module.exports = async function handler(req, res) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("X-Accel-Buffering", "no");
 
-    if (!upstream.body) {
-      clearTimeout(timeout);
-      res.write("تعذر بدء الرد حالياً.");
-      return res.end();
-    }
-
-    const reader = upstream.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let wroteContent = false;
-
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        const parts = buffer.split("\n");
-        buffer = parts.pop() || "";
-
-        for (const line of parts) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-
-          const payload = trimmed.slice(5).trim();
-          if (!payload || payload === "[DONE]") continue;
-
-          try {
-            const data = JSON.parse(payload);
-            const chunk = data?.choices?.[0]?.delta?.content;
-
-            if (typeof chunk === "string" && chunk) {
-              wroteContent = true;
-              res.write(chunk);
-            }
-          } catch {}
-        }
-      }
+      await streamOpenAICompatibleResponse(upstream, res);
     } finally {
       clearTimeout(timeout);
-    }
-
-    if (!wroteContent) {
-      res.write("تعذر إنشاء الرد حالياً. أعد المحاولة.");
     }
 
     return res.end();
