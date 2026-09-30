@@ -3,6 +3,13 @@ const AI_MODEL = "openrouter/free";
 
 const EXPERIMENTAL_HOST = "camillecyrm.serv00.net";
 const DEFAULT_EXPERIMENTAL_URL = "https://camillecyrm.serv00.net/v1/chat/completions";
+
+const MAX_TEXT_CHARS = 180000;
+const MAX_HISTORY_CHARS = 90000;
+const MAX_ATTACHMENT_TEXT = 100000;
+const MAX_TRAINING_CHARS = 60000;
+const MAX_IMAGE_DATA_CHARS = 3500000;
+
 const ALLOWED_EXPERIMENTAL_MODELS = new Set([
   "auto",
   "gpt-6-astra",
@@ -34,7 +41,7 @@ const ALLOWED_EXPERIMENTAL_MODELS = new Set([
 const MODE_PROMPTS = {
   general: "كن مساعداً عاماً دقيقاً ومباشراً، ونظم الإجابة بحسب حاجة المستخدم.",
   writing: "ركز على الكتابة والصياغة والتحرير. قدم نصوصاً طبيعية ومتماسكة وبالأسلوب الذي يطلبه المستخدم.",
-  coding: "تصرف كمساعد برمجي. قدم حلولاً عملية وكوداً منظماً، واشرح الأخطاء والخطوات عند الحاجة.",
+  coding: "تصرف كمساعد برمجي محترف. أعط ملفات وكوداً كاملاً قابلاً للنسخ، حافظ على أسماء الملفات والبنية، ولا تختصر الكود المطلوب.",
   study: "ساعد في التعلم والفهم. اشرح بوضوح وعلى مراحل، واستخدم أمثلة قصيرة عند فائدتها.",
   summary: "ركز على التلخيص واستخراج النقاط المهمة مع الحفاظ على المعنى وعدم اختراع معلومات.",
   translate: "ركز على الترجمة الطبيعية الدقيقة، واحفظ المعنى والنبرة ولا تضف شرحاً إلا إذا طُلب."
@@ -53,7 +60,7 @@ function getClientIp(req) {
 function isRateLimited(ip) {
   const now = Date.now();
   const windowMs = 10 * 60 * 1000;
-  const maxRequests = 30;
+  const maxRequests = 40;
   const current = buckets.get(ip);
 
   if (!current || now - current.startedAt > windowMs) {
@@ -80,18 +87,32 @@ function validateOrigin(req) {
 function cleanHistory(history) {
   if (!Array.isArray(history)) return [];
 
-  return history
+  const valid = history
     .filter(
       item =>
         item &&
         (item.role === "user" || item.role === "assistant") &&
         typeof item.content === "string"
     )
-    .slice(-18)
-    .map(item => ({
+    .slice(-24);
+
+  const result = [];
+  let used = 0;
+
+  for (let i = valid.length - 1; i >= 0; i -= 1) {
+    const item = valid[i];
+    const content = item.content.slice(0, 50000);
+
+    if (used + content.length > MAX_HISTORY_CHARS && result.length) break;
+
+    used += content.length;
+    result.unshift({
       role: item.role,
-      content: item.content.slice(0, 14000)
-    }));
+      content
+    });
+  }
+
+  return result;
 }
 
 function cleanAttachments(attachments) {
@@ -99,12 +120,12 @@ function cleanAttachments(attachments) {
 
   return attachments
     .filter(item => item && typeof item === "object")
-    .slice(0, 4)
+    .slice(0, 6)
     .map(item => ({
       kind: item.kind === "image" ? "image" : "text",
-      name: String(item.name || "ملف").slice(0, 120),
-      data: typeof item.data === "string" ? item.data : "",
-      text: typeof item.text === "string" ? item.text.slice(0, 22000) : ""
+      name: String(item.name || "ملف").slice(0, 160),
+      data: typeof item.data === "string" ? item.data.slice(0, MAX_IMAGE_DATA_CHARS) : "",
+      text: typeof item.text === "string" ? item.text.slice(0, MAX_ATTACHMENT_TEXT) : ""
     }));
 }
 
@@ -114,6 +135,9 @@ function publicError(status) {
   }
   if (status === 402) {
     return "الخدمة وصلت إلى حد الاستخدام الحالي. جرّب لاحقاً.";
+  }
+  if (status === 413) {
+    return "حجم الطلب أكبر من الحد المسموح. قلل حجم الملفات أو الصور.";
   }
   if (status === 429) {
     return "تم بلوغ الحد المؤقت للطلبات. انتظر قليلاً ثم أعد المحاولة.";
@@ -138,15 +162,26 @@ function buildCombinedText(text, attachments) {
   return combinedText;
 }
 
-function buildSystemPrompt(mode) {
-  return [
+function buildSystemPrompt(mode, longOutput) {
+  const parts = [
     "أنت Ashur AI، مساعد ذكي سريع وواضح.",
     "أجب باللغة التي يستخدمها المستخدم، واستخدم العربية العراقية عندما يلائم السياق.",
     "لا تذكر اسم مزود النموذج أو المنصة الخلفية أو اسم النموذج أو أي تفاصيل تقنية داخلية.",
-    "لا تضف عبارة من قبيل: المصدر، المزود، النموذج المستخدم، أو معلومات النظام.",
-    "استخدم Markdown عند الحاجة، ونسق الأكواد داخل كتل كود.",
+    "لا تضف عبارات المصدر أو المزود أو النموذج المستخدم أو معلومات النظام.",
+    "استخدم Markdown عند الحاجة، وضع الأكواد داخل كتل كود كاملة مع اسم اللغة.",
     MODE_PROMPTS[mode] || MODE_PROMPTS.general
-  ].join(" ");
+  ];
+
+  if (longOutput) {
+    parts.push(
+      "في طلبات البرمجة الطويلة لا تختصر ولا تكتب placeholders مثل // باقي الكود.",
+      "أكمل الملفات المطلوبة قدر الإمكان.",
+      "إذا انتهيت تماماً ضع السطر [[ASHUR_DONE]] في نهاية الرد.",
+      "إذا بقي جزء لم يُكتب واستطعت وضع علامة قبل توقف الرد، ضع [[ASHUR_CONTINUE]]."
+    );
+  }
+
+  return parts.join(" ");
 }
 
 function validateExperimentalUrl(rawUrl) {
@@ -163,6 +198,28 @@ function validateExperimentalUrl(rawUrl) {
   } catch {
     return null;
   }
+}
+
+function buildContinuationText(originalText, continuation) {
+  if (!continuation || typeof continuation !== "object") {
+    return originalText;
+  }
+
+  const tail = String(continuation.tail || "").slice(-30000);
+  const part = Math.max(2, Math.min(12, Number(continuation.part) || 2));
+
+  return [
+    "أكمل نفس الإجابة السابقة مباشرةً بدون مقدمة وبدون إعادة أي سطر سبق كتابته.",
+    `هذه التكملة رقم ${part}.`,
+    "حافظ على نفس تنسيق Markdown ونفس كتلة/ملف الكود إذا كان الكود مستمراً.",
+    "لا تبدأ من جديد. ابدأ تحديداً من بعد آخر محتوى مكتوب.",
+    "",
+    "الطلب الأصلي:",
+    originalText.slice(0, 50000),
+    "",
+    "آخر جزء من الإجابة السابقة للاستدلال على موضع المتابعة:",
+    tail
+  ].join("\n");
 }
 
 async function streamOpenAICompatibleResponse(upstream, res) {
@@ -215,7 +272,8 @@ async function handleExperimentalSource({
   attachments,
   temperature,
   mode,
-  history
+  history,
+  longOutput
 }) {
   const experimental = body.experimental || {};
   const endpoint = validateExperimentalUrl(experimental.url);
@@ -245,20 +303,13 @@ async function handleExperimentalSource({
     ? requestedModel
     : "gpt-5-6";
 
-  const training = String(experimental.training || "").slice(0, 30000);
-  const markdown = String(experimental.md || "").slice(0, 30000);
-
-  const imageAttachments = attachments.filter(item => item.kind === "image");
-  if (imageAttachments.length) {
-    return res.status(400).json({
-      status: false,
-      error: "رفع الصور غير مفعّل بعد على المصدر التجريبي."
-    });
-  }
+  const training = String(experimental.training || "").slice(0, MAX_TRAINING_CHARS);
+  const markdown = String(experimental.md || "").slice(0, MAX_TRAINING_CHARS);
 
   const combinedText = buildCombinedText(text, attachments).trim();
+  const promptText = buildContinuationText(combinedText, body.continuation);
 
-  if (!combinedText) {
+  if (!promptText) {
     return res.status(400).json({
       status: false,
       error: "المصدر التجريبي يحتاج نصاً للإرسال."
@@ -266,9 +317,9 @@ async function handleExperimentalSource({
   }
 
   const messages = [
-    { role: "system", content: buildSystemPrompt(mode) },
+    { role: "system", content: buildSystemPrompt(mode, longOutput) },
     ...history,
-    { role: "user", content: combinedText }
+    { role: "user", content: promptText }
   ];
 
   const requestBody = {
@@ -344,6 +395,116 @@ async function handleExperimentalSource({
   return res.end();
 }
 
+async function handleDefaultSource({
+  res,
+  body,
+  text,
+  attachments,
+  temperature,
+  mode,
+  history,
+  longOutput
+}) {
+  const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
+
+  if (!apiKey) {
+    return res.status(500).json({
+      status: false,
+      error: "إعداد الخدمة غير مكتمل."
+    });
+  }
+
+  const combinedText = buildCombinedText(text, attachments);
+  const promptText = buildContinuationText(combinedText, body.continuation);
+
+  const imageAttachments = attachments.filter(
+    item =>
+      item.kind === "image" &&
+      /^data:image\/(png|jpe?g|webp);base64,/i.test(item.data) &&
+      item.data.length <= MAX_IMAGE_DATA_CHARS
+  );
+
+  let userContent;
+
+  if (imageAttachments.length) {
+    userContent = [
+      {
+        type: "text",
+        text: promptText || "حلل الصور المرفقة وساعدني بما هو مناسب."
+      },
+      ...imageAttachments.map(item => ({
+        type: "image_url",
+        image_url: { url: item.data }
+      }))
+    ];
+  } else {
+    userContent = promptText;
+  }
+
+  const messages = [
+    { role: "system", content: buildSystemPrompt(mode, longOutput) },
+    ...history,
+    { role: "user", content: userContent }
+  ];
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 55000);
+
+  let upstream;
+
+  try {
+    upstream = await fetch(AI_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "HTTP-Referer": "https://ashur-ai1.vercel.app",
+        "X-Title": "Ashur AI"
+      },
+      body: JSON.stringify({
+        model: AI_MODEL,
+        messages,
+        temperature,
+        stream: true
+      }),
+      signal: controller.signal
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    throw error;
+  }
+
+  if (!upstream.ok) {
+    clearTimeout(timeout);
+
+    let details = "";
+    try {
+      const data = await upstream.json();
+      details = data?.error?.message || data?.message || "";
+    } catch {}
+
+    console.error("AI upstream error:", upstream.status, details);
+
+    return res.status(upstream.status).json({
+      status: false,
+      error: publicError(upstream.status)
+    });
+  }
+
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  try {
+    await streamOpenAICompatibleResponse(upstream, res);
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  return res.end();
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -398,10 +559,10 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    if (text.length > 16000) {
+    if (text.length > MAX_TEXT_CHARS) {
       return res.status(400).json({
         status: false,
-        error: "الرسالة طويلة جداً. اختصرها ثم أعد المحاولة."
+        error: "الرسالة تجاوزت الحد الحالي وهو 180,000 حرف."
       });
     }
 
@@ -411,8 +572,12 @@ module.exports = async function handler(req, res) {
 
     const mode = MODE_PROMPTS[body.mode] ? body.mode : "general";
     const history = cleanHistory(body.history);
+    const longOutput = Boolean(body.long_output);
+    const hasImages = attachments.some(item => item.kind === "image");
 
-    if (body.source === "experimental") {
+    // The experimental chat documentation does not explicitly guarantee image input.
+    // If an image is attached, silently use the image-capable default path.
+    if (body.source === "experimental" && !hasImages) {
       return await handleExperimentalSource({
         res,
         body,
@@ -420,107 +585,21 @@ module.exports = async function handler(req, res) {
         attachments,
         temperature,
         mode,
-        history
+        history,
+        longOutput
       });
     }
 
-    const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
-
-    if (!apiKey) {
-      return res.status(500).json({
-        status: false,
-        error: "إعداد الخدمة غير مكتمل."
-      });
-    }
-
-    const combinedText = buildCombinedText(text, attachments);
-
-    const imageAttachments = attachments.filter(
-      item =>
-        item.kind === "image" &&
-        /^data:image\/(png|jpe?g|webp);base64,/i.test(item.data) &&
-        item.data.length <= 3_000_000
-    );
-
-    let userContent;
-
-    if (imageAttachments.length) {
-      userContent = [
-        {
-          type: "text",
-          text: combinedText || "حلل الصور المرفقة وساعدني بما هو مناسب."
-        },
-        ...imageAttachments.map(item => ({
-          type: "image_url",
-          image_url: { url: item.data }
-        }))
-      ];
-    } else {
-      userContent = combinedText;
-    }
-
-    const messages = [
-      { role: "system", content: buildSystemPrompt(mode) },
-      ...history,
-      { role: "user", content: userContent }
-    ];
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 55000);
-
-    let upstream;
-
-    try {
-      upstream = await fetch(AI_ENDPOINT, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-          "HTTP-Referer": "https://ashur-ai1.vercel.app",
-          "X-Title": "Ashur AI"
-        },
-        body: JSON.stringify({
-          model: AI_MODEL,
-          messages,
-          temperature,
-          stream: true
-        }),
-        signal: controller.signal
-      });
-    } catch (error) {
-      clearTimeout(timeout);
-      throw error;
-    }
-
-    if (!upstream.ok) {
-      clearTimeout(timeout);
-
-      let details = "";
-      try {
-        const data = await upstream.json();
-        details = data?.error?.message || data?.message || "";
-      } catch {}
-
-      console.error("AI upstream error:", upstream.status, details);
-
-      return res.status(upstream.status).json({
-        status: false,
-        error: publicError(upstream.status)
-      });
-    }
-
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("X-Accel-Buffering", "no");
-
-    try {
-      await streamOpenAICompatibleResponse(upstream, res);
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    return res.end();
+    return await handleDefaultSource({
+      res,
+      body,
+      text,
+      attachments,
+      temperature,
+      mode,
+      history,
+      longOutput
+    });
 
   } catch (error) {
     if (error?.name === "AbortError") {
