@@ -700,6 +700,7 @@
       <div class="modal-body image-form">
         <textarea id="imagePrompt" maxlength="5000" placeholder="اوصف الصورة بالتفصيل..."></textarea>
         <select id="imageModel">
+          <option value="auto">تلقائي</option>
           <option value="flux">عام</option>
           <option value="flux-realism">واقعي</option>
           <option value="flux-anime">أنمي</option>
@@ -779,7 +780,7 @@
         enterToSend:true,
         longOutput:true,
         maxContinuations:6,
-        imageModel:"flux",
+        imageModel:"auto",
         source:"default",
         experimentalUrl:"https://camillecyrm.serv00.net/v1/chat/completions",
         experimentalModel:"gpt-5-6",
@@ -903,7 +904,7 @@
       enterSetting.checked = !!settings.enterToSend;
       longOutputSetting.checked = settings.longOutput !== false;
       continuationSetting.value = String(settings.maxContinuations || 6);
-      imageModel.value = settings.imageModel || "flux";
+      imageModel.value = settings.imageModel || "auto";
       sourceSetting.value = settings.source === "experimental" ? "experimental" : "default";
       experimentalUrl.value = settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions";
       experimentalModel.value = settings.experimentalModel || "gpt-5-6";
@@ -1154,7 +1155,7 @@
         edit.dataset.action = "edit";
         edit.dataset.id = msg.id;
         actions.appendChild(edit);
-      }else if(!msg.streaming){
+      }else if(!msg.streaming && !msg.image){
         var regen = document.createElement("button");
         regen.textContent = "إعادة";
         regen.dataset.action = "regenerate";
@@ -1187,11 +1188,20 @@
 
       var bubble = old.querySelector(".bubble");
       if(msg.role === "assistant"){
-        bubble.innerHTML = renderMarkdown(msg.text || "");
-        if(msg.streaming){
-          var caret = document.createElement("span");
-          caret.className = "typing-caret";
-          bubble.appendChild(caret);
+        if(msg.image){
+          bubble.innerHTML =
+            '<img class="generated-image" src="' + escapeHtml(msg.image) + '" alt="صورة مولدة">' +
+            '<div class="image-actions">' +
+              '<a href="' + escapeHtml(msg.image) + '" target="_blank" rel="noopener noreferrer">فتح الصورة</a>' +
+              '<button type="button" data-image-download="' + escapeHtml(msg.image) + '">تنزيل</button>' +
+            '</div>';
+        }else{
+          bubble.innerHTML = renderMarkdown(msg.text || "");
+          if(msg.streaming){
+            var caret = document.createElement("span");
+            caret.className = "typing-caret";
+            bubble.appendChild(caret);
+          }
         }
       }else{
         bubble.textContent = msg.text || "";
@@ -1368,6 +1378,129 @@
       }
     }
 
+    function isImageRequest(text){
+      var t = String(text || "").trim().toLowerCase();
+      if(!t) return false;
+
+      if(/^\/image\b/i.test(t) || /^\/img\b/i.test(t)) return true;
+
+      var hasImageWord = /(صورة|صور|بوستر|ملصق|لوغو|لوجو|شعار|خلفية|wallpaper|image|picture|poster|logo)/i.test(t);
+      var hasCreateVerb = /(انشئ|أنشئ|انشاء|إنشاء|اصنع|إصنع|سوي|سويلي|سوّي|صمم|صمّم|ارسم|ولد|ولّد|generate|create|draw|design|make)/i.test(t);
+
+      return hasImageWord && hasCreateVerb;
+    }
+
+    function extractImagePrompt(text){
+      var t = String(text || "").trim();
+
+      t = t
+        .replace(/^\/(image|img)\s*/i,"")
+        .replace(/^(انشئ|أنشئ|انشاء|إنشاء|اصنع|إصنع|سوي|سويلي|سوّي|صمم|صمّم|ارسم|ولد|ولّد)\s*/i,"")
+        .replace(/^(generate|create|draw|design|make)\s*/i,"")
+        .replace(/^(لي\s*)?(صورة|صور|بوستر|ملصق|لوغو|لوجو|شعار|خلفية)\s*/i,"");
+
+      return t.trim() || String(text || "").trim();
+    }
+
+    async function generateImageInChat(rawText, forcedModel){
+      if(generating) return;
+
+      var promptText = extractImagePrompt(rawText);
+      if(!promptText){
+        showToast("اكتب وصف الصورة أولاً.");
+        return;
+      }
+
+      var chat = currentChat();
+      var userMsg = {
+        id:uid("msg"),
+        role:"user",
+        text:String(rawText || "").trim(),
+        time:Date.now(),
+        attachments:[]
+      };
+
+      var assistantMsg = {
+        id:uid("msg"),
+        role:"assistant",
+        text:"جاري إنشاء الصورة...",
+        time:Date.now(),
+        attachments:[],
+        streaming:true
+      };
+
+      chat.messages.push(userMsg);
+      chat.messages.push(assistantMsg);
+
+      if(chat.title === "محادثة جديدة"){
+        chat.title = autoTitle("صورة: " + promptText);
+      }
+
+      input.value = "";
+      pendingAttachments = [];
+      renderAttachments();
+      resizeInput();
+
+      chat.updatedAt = Date.now();
+      saveState();
+      renderAll();
+      setGenerating(true);
+      statusText.textContent = "جاري إنشاء الصورة...";
+      scrollBottom();
+
+      currentController = new AbortController();
+
+      try{
+        var response = await fetch("/api/image",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            prompt:promptText,
+            model:forcedModel || settings.imageModel || "auto",
+            key:sessionStorage.getItem("ashur_experimental_key") || ""
+          }),
+          signal:currentController.signal
+        });
+
+        var data = {};
+        try{data = await response.json();}catch(e){}
+
+        if(!response.ok || !data.status || !data.image){
+          throw new Error(data.error || "تعذر إنشاء الصورة.");
+        }
+
+        assistantMsg.streaming = false;
+        assistantMsg.text = "";
+        assistantMsg.image = data.image;
+        assistantMsg.time = Date.now();
+
+        chat.updatedAt = Date.now();
+        saveState();
+        renderAll();
+        scrollBottom();
+
+      }catch(error){
+        if(error && error.name === "AbortError"){
+          assistantMsg.streaming = false;
+          assistantMsg.text = "تم إيقاف إنشاء الصورة.";
+          showToast("تم إيقاف إنشاء الصورة.");
+        }else{
+          assistantMsg.streaming = false;
+          assistantMsg.text = error.message || "تعذر إنشاء الصورة حالياً.";
+          showToast(assistantMsg.text);
+        }
+
+        chat.updatedAt = Date.now();
+        saveState();
+        renderAll();
+
+      }finally{
+        currentController = null;
+        setGenerating(false);
+        setTimeout(function(){input.focus();},50);
+      }
+    }
+
     async function sendMessage(options){
       options = options || {};
       if(generating) return;
@@ -1378,6 +1511,11 @@
 
       if(!text && !wireAttachments.length){
         showToast("اكتب رسالة أو أرفق ملف.");
+        return;
+      }
+
+      if(!options.reuseUser && text && !wireAttachments.length && isImageRequest(text)){
+        await generateImageInChat(text);
         return;
       }
 
@@ -1705,70 +1843,20 @@
 
     async function generateImage(){
       var prompt = imagePrompt.value.trim();
+
       if(!prompt){
         showToast("اكتب وصف الصورة أولاً.");
         return;
       }
 
-      var key = sessionStorage.getItem("ashur_experimental_key") || "";
-      var old = generateImageBtn.textContent;
-      generateImageBtn.disabled = true;
-      generateImageBtn.textContent = "جاري الإنشاء...";
+      var selectedModel = imageModel.value || "auto";
+      settings.imageModel = selectedModel;
+      saveSettings();
 
-      try{
-        var response = await fetch("/api/image",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            prompt:prompt,
-            model:imageModel.value || settings.imageModel || "flux",
-            key:key
-          })
-        });
+      imageModal.classList.remove("open");
+      imagePrompt.value = "";
 
-        var data = {};
-        try{data = await response.json();}catch(e){}
-
-        if(!response.ok || !data.status || !data.image){
-          throw new Error(data.error || "تعذر إنشاء الصورة.");
-        }
-
-        settings.imageModel = imageModel.value || "flux";
-        saveSettings();
-
-        var chat = currentChat();
-        if(chat.title === "محادثة جديدة") chat.title = autoTitle("صورة: " + prompt);
-
-        chat.messages.push({
-          id:uid("msg"),
-          role:"user",
-          text:"إنشاء صورة: " + prompt,
-          time:Date.now(),
-          attachments:[]
-        });
-
-        chat.messages.push({
-          id:uid("msg"),
-          role:"assistant",
-          text:"",
-          image:data.image,
-          time:Date.now(),
-          attachments:[],
-          streaming:false
-        });
-
-        chat.updatedAt = Date.now();
-        saveState();
-        renderAll();
-        imagePrompt.value = "";
-        imageModal.classList.remove("open");
-        scrollBottom();
-      }catch(error){
-        showToast(error.message || "تعذر إنشاء الصورة.");
-      }finally{
-        generateImageBtn.disabled = false;
-        generateImageBtn.textContent = old;
-      }
+      await generateImageInChat("إنشاء صورة: " + prompt, selectedModel);
     }
 
     function startVoice(){
