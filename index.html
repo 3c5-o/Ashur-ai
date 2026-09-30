@@ -301,6 +301,23 @@
       min-width:115px;height:38px;border:1px solid var(--line);
       border-radius:10px;background:var(--panel2);color:var(--text);padding:0 8px;
     }
+    .experimental-box{
+      display:none;margin:10px 0 4px;padding:12px;
+      border:1px solid var(--line);border-radius:14px;background:var(--panel2);
+    }
+    .experimental-box.show{display:block}
+    .experimental-box label{display:block;font-size:12px;margin:10px 0 6px}
+    .experimental-box label:first-child{margin-top:0}
+    .setting-text-input{
+      width:100%;height:40px;border:1px solid var(--line);
+      border-radius:10px;background:var(--panel);color:var(--text);
+      padding:0 10px;outline:none;direction:ltr;text-align:left;
+    }
+    .experimental-note{font-size:10px;color:var(--muted);line-height:1.7;margin-top:8px}
+    .test-source-btn{
+      width:100%;height:40px;margin-top:10px;border:1px solid var(--line);
+      border-radius:10px;background:var(--panel3);color:var(--text);
+    }
     .switch{width:46px;height:26px;position:relative}
     .switch input{display:none}
     .slider{
@@ -472,6 +489,42 @@
         </div>
 
         <div class="setting-row">
+          <div><label>مصدر الرد</label><small>اختيار المصدر الأساسي أو مصدر تجريبي</small></div>
+          <select id="sourceSetting">
+            <option value="default">الأساسي</option>
+            <option value="experimental">تجريبي</option>
+          </select>
+        </div>
+
+        <div class="experimental-box" id="experimentalSettings">
+          <label for="experimentalUrl">رابط المصدر التجريبي</label>
+          <input
+            class="setting-text-input"
+            id="experimentalUrl"
+            type="url"
+            value="https://camillecyrm.serv00.net/GPT-5-6/api"
+            autocomplete="off"
+          >
+
+          <label for="experimentalKey">مفتاح الوصول</label>
+          <input
+            class="setting-text-input"
+            id="experimentalKey"
+            type="password"
+            placeholder="اختياري حسب إعداد المصدر"
+            autocomplete="off"
+          >
+
+          <div class="experimental-note">
+            هذا المصدر للتجربة فقط. المفتاح لا يُرفع إلى GitHub ويُحفظ مؤقتاً داخل جلسة المتصفح.
+          </div>
+
+          <button class="test-source-btn" id="testExperimentalBtn" type="button">
+            اختبار الاتصال
+          </button>
+        </div>
+
+        <div class="setting-row">
           <div><label>Enter للإرسال</label><small>Shift + Enter لسطر جديد</small></div>
           <label class="switch">
             <input id="enterSetting" type="checkbox">
@@ -529,6 +582,11 @@
     var fontSetting = document.getElementById("fontSetting");
     var tempSetting = document.getElementById("tempSetting");
     var enterSetting = document.getElementById("enterSetting");
+    var sourceSetting = document.getElementById("sourceSetting");
+    var experimentalSettings = document.getElementById("experimentalSettings");
+    var experimentalUrl = document.getElementById("experimentalUrl");
+    var experimentalKey = document.getElementById("experimentalKey");
+    var testExperimentalBtn = document.getElementById("testExperimentalBtn");
 
     function uid(prefix){
       return (prefix || "id") + "_" + Date.now() + "_" + Math.random().toString(36).slice(2,9);
@@ -539,7 +597,9 @@
         theme:"dark",
         fontSize:15,
         temperature:0.7,
-        enterToSend:true
+        enterToSend:true,
+        source:"default",
+        experimentalUrl:"https://camillecyrm.serv00.net/GPT-5-6/api"
       };
     }
 
@@ -642,6 +702,10 @@
       fontSetting.value = settings.fontSize;
       tempSetting.value = settings.temperature;
       enterSetting.checked = !!settings.enterToSend;
+      sourceSetting.value = settings.source === "experimental" ? "experimental" : "default";
+      experimentalUrl.value = settings.experimentalUrl || "https://camillecyrm.serv00.net/GPT-5-6/api";
+      experimentalKey.value = sessionStorage.getItem("ashur_experimental_key") || "";
+      experimentalSettings.classList.toggle("show", sourceSetting.value === "experimental");
     }
 
     function renderAll(){
@@ -1051,6 +1115,12 @@
           text:userMsg.text,
           mode:chat.mode || "general",
           temperature:Number(settings.temperature),
+          source:settings.source === "experimental" ? "experimental" : "default",
+          experimental:{
+            url:settings.experimentalUrl || "https://camillecyrm.serv00.net/GPT-5-6/api",
+            key:sessionStorage.getItem("ashur_experimental_key") || ""
+          },
+          conversation_id:chat.id,
           history:history,
           attachments:wireAttachments.map(function(a){
             return {
@@ -1421,6 +1491,66 @@
     enterSetting.addEventListener("change",function(){
       settings.enterToSend = enterSetting.checked;
       saveSettings();
+    });
+
+    sourceSetting.addEventListener("change",function(){
+      settings.source = sourceSetting.value === "experimental" ? "experimental" : "default";
+      saveSettings();
+      experimentalSettings.classList.toggle("show", settings.source === "experimental");
+      showToast(settings.source === "experimental" ? "تم تفعيل المصدر التجريبي." : "تم تفعيل المصدر الأساسي.");
+    });
+
+    experimentalUrl.addEventListener("change",function(){
+      var value = experimentalUrl.value.trim();
+      settings.experimentalUrl = value || "https://camillecyrm.serv00.net/GPT-5-6/api";
+      experimentalUrl.value = settings.experimentalUrl;
+      saveSettings();
+    });
+
+    experimentalKey.addEventListener("input",function(){
+      sessionStorage.setItem("ashur_experimental_key", experimentalKey.value.trim());
+    });
+
+    testExperimentalBtn.addEventListener("click",async function(){
+      var oldText = testExperimentalBtn.textContent;
+      testExperimentalBtn.disabled = true;
+      testExperimentalBtn.textContent = "جاري الاختبار...";
+
+      try{
+        var response = await fetch("/api/chat",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            text:"مرحبا",
+            temperature:Number(settings.temperature),
+            source:"experimental",
+            experimental:{
+              url:experimentalUrl.value.trim() || "https://camillecyrm.serv00.net/GPT-5-6/api",
+              key:experimentalKey.value.trim()
+            },
+            conversation_id:"settings_test"
+          })
+        });
+
+        var type = response.headers.get("content-type") || "";
+        var message = "";
+
+        if(type.indexOf("application/json") !== -1){
+          var data = await response.json();
+          if(!response.ok) throw new Error(data.error || "فشل الاختبار.");
+          message = data.response || "";
+        }else{
+          message = await response.text();
+          if(!response.ok) throw new Error(message || "فشل الاختبار.");
+        }
+
+        showToast(message ? "الاتصال بالمصدر التجريبي ناجح." : "تم الاتصال بالمصدر التجريبي.");
+      }catch(error){
+        showToast(error.message || "فشل اختبار المصدر التجريبي.");
+      }finally{
+        testExperimentalBtn.disabled = false;
+        testExperimentalBtn.textContent = oldText;
+      }
     });
 
     document.getElementById("clearAllBtn").addEventListener("click",function(){
