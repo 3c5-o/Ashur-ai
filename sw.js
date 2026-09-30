@@ -1,4 +1,4 @@
-const CACHE_NAME = "ashur-ai-v5";
+const CACHE_NAME = "ashur-ai-v6";
 const STATIC_ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
