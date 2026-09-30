@@ -313,6 +313,17 @@
       border-radius:10px;background:var(--panel);color:var(--text);
       padding:0 10px;outline:none;direction:ltr;text-align:left;
     }
+    .setting-textarea{
+      width:100%;min-height:92px;max-height:180px;resize:vertical;
+      border:1px solid var(--line);border-radius:10px;
+      background:var(--panel);color:var(--text);padding:10px;
+      outline:none;line-height:1.6;
+    }
+    .experimental-box select{
+      width:100%;height:40px;border:1px solid var(--line);
+      border-radius:10px;background:var(--panel);color:var(--text);
+      padding:0 10px;outline:none;
+    }
     .experimental-note{font-size:10px;color:var(--muted);line-height:1.7;margin-top:8px}
     .test-source-btn{
       width:100%;height:40px;margin-top:10px;border:1px solid var(--line);
@@ -502,21 +513,61 @@
             class="setting-text-input"
             id="experimentalUrl"
             type="url"
-            value="https://camillecyrm.serv00.net/GPT-5-6/api"
+            value="https://camillecyrm.serv00.net/v1/chat/completions"
             autocomplete="off"
           >
+
+          <label for="experimentalModel">الموديل</label>
+          <select id="experimentalModel">
+            <option value="gpt-5-6">GPT-5-6</option>
+            <option value="auto">Auto</option>
+            <option value="gpt-6-astra">GPT-6 Astra</option>
+            <option value="gpt-6-sol">GPT-6 Sol</option>
+            <option value="gpt-6-luna">GPT-6 Luna</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4o-mini">GPT-4o Mini</option>
+            <option value="gpt-5-mini">GPT-5 Mini</option>
+            <option value="gpt-5-nano">GPT-5 Nano</option>
+            <option value="o1">o1</option>
+            <option value="o1-mini">o1 Mini</option>
+            <option value="o3-mini">o3 Mini</option>
+            <option value="deepseek-v3.2">DeepSeek V3.2</option>
+            <option value="qwen-30b">Qwen 30B</option>
+            <option value="llama-3.3-70b-instruct">Llama 3.3 70B</option>
+            <option value="gemma-4">Gemma 4</option>
+            <option value="doubao-seed-2.0-pro">Doubao 2.0 Pro</option>
+            <option value="doubao-seed-2.0-code">Doubao 2.0 Code</option>
+            <option value="deepai-standard">DeepAI Standard</option>
+            <option value="deepai-online">DeepAI Online</option>
+            <option value="gemini-web">Gemini Web</option>
+            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+          </select>
 
           <label for="experimentalKey">مفتاح الوصول</label>
           <input
             class="setting-text-input"
             id="experimentalKey"
             type="password"
-            placeholder="اختياري حسب إعداد المصدر"
+            placeholder="sk-..."
             autocomplete="off"
           >
 
+          <label for="experimentalTraining">معلومات التدريب</label>
+          <textarea
+            class="setting-textarea"
+            id="experimentalTraining"
+            placeholder="مثال: اسم المشروع Ashur AI، أجب بالعربية، هذه معلومات الخدمة..."
+          ></textarea>
+
+          <label for="experimentalMarkdown">Markdown / Docs</label>
+          <textarea
+            class="setting-textarea"
+            id="experimentalMarkdown"
+            placeholder="معلومات منظمة أو توثيق بصيغة Markdown..."
+          ></textarea>
+
           <div class="experimental-note">
-            هذا المصدر للتجربة فقط. المفتاح لا يُرفع إلى GitHub ويُحفظ مؤقتاً داخل جلسة المتصفح.
+            المفتاح يُحفظ مؤقتاً داخل جلسة المتصفح فقط. بيانات التدريب تُحفظ على هذا الجهاز للتجربة.
           </div>
 
           <button class="test-source-btn" id="testExperimentalBtn" type="button">
@@ -585,7 +636,10 @@
     var sourceSetting = document.getElementById("sourceSetting");
     var experimentalSettings = document.getElementById("experimentalSettings");
     var experimentalUrl = document.getElementById("experimentalUrl");
+    var experimentalModel = document.getElementById("experimentalModel");
     var experimentalKey = document.getElementById("experimentalKey");
+    var experimentalTraining = document.getElementById("experimentalTraining");
+    var experimentalMarkdown = document.getElementById("experimentalMarkdown");
     var testExperimentalBtn = document.getElementById("testExperimentalBtn");
 
     function uid(prefix){
@@ -599,7 +653,10 @@
         temperature:0.7,
         enterToSend:true,
         source:"default",
-        experimentalUrl:"https://camillecyrm.serv00.net/GPT-5-6/api"
+        experimentalUrl:"https://camillecyrm.serv00.net/v1/chat/completions",
+        experimentalModel:"gpt-5-6",
+        experimentalTraining:"",
+        experimentalMarkdown:""
       };
     }
 
@@ -703,8 +760,11 @@
       tempSetting.value = settings.temperature;
       enterSetting.checked = !!settings.enterToSend;
       sourceSetting.value = settings.source === "experimental" ? "experimental" : "default";
-      experimentalUrl.value = settings.experimentalUrl || "https://camillecyrm.serv00.net/GPT-5-6/api";
+      experimentalUrl.value = settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions";
+      experimentalModel.value = settings.experimentalModel || "gpt-5-6";
       experimentalKey.value = sessionStorage.getItem("ashur_experimental_key") || "";
+      experimentalTraining.value = settings.experimentalTraining || "";
+      experimentalMarkdown.value = settings.experimentalMarkdown || "";
       experimentalSettings.classList.toggle("show", sourceSetting.value === "experimental");
     }
 
@@ -1117,8 +1177,11 @@
           temperature:Number(settings.temperature),
           source:settings.source === "experimental" ? "experimental" : "default",
           experimental:{
-            url:settings.experimentalUrl || "https://camillecyrm.serv00.net/GPT-5-6/api",
-            key:sessionStorage.getItem("ashur_experimental_key") || ""
+            url:settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions",
+            model:settings.experimentalModel || "gpt-5-6",
+            key:sessionStorage.getItem("ashur_experimental_key") || "",
+            training:settings.experimentalTraining || "",
+            md:settings.experimentalMarkdown || ""
           },
           conversation_id:chat.id,
           history:history,
@@ -1502,13 +1565,28 @@
 
     experimentalUrl.addEventListener("change",function(){
       var value = experimentalUrl.value.trim();
-      settings.experimentalUrl = value || "https://camillecyrm.serv00.net/GPT-5-6/api";
+      settings.experimentalUrl = value || "https://camillecyrm.serv00.net/v1/chat/completions";
       experimentalUrl.value = settings.experimentalUrl;
       saveSettings();
     });
 
     experimentalKey.addEventListener("input",function(){
       sessionStorage.setItem("ashur_experimental_key", experimentalKey.value.trim());
+    });
+
+    experimentalModel.addEventListener("change",function(){
+      settings.experimentalModel = experimentalModel.value || "gpt-5-6";
+      saveSettings();
+    });
+
+    experimentalTraining.addEventListener("input",function(){
+      settings.experimentalTraining = experimentalTraining.value.slice(0,30000);
+      saveSettings();
+    });
+
+    experimentalMarkdown.addEventListener("input",function(){
+      settings.experimentalMarkdown = experimentalMarkdown.value.slice(0,30000);
+      saveSettings();
     });
 
     testExperimentalBtn.addEventListener("click",async function(){
@@ -1525,8 +1603,11 @@
             temperature:Number(settings.temperature),
             source:"experimental",
             experimental:{
-              url:experimentalUrl.value.trim() || "https://camillecyrm.serv00.net/GPT-5-6/api",
-              key:experimentalKey.value.trim()
+              url:experimentalUrl.value.trim() || "https://camillecyrm.serv00.net/v1/chat/completions",
+              model:experimentalModel.value || "gpt-5-6",
+              key:experimentalKey.value.trim(),
+              training:experimentalTraining.value || "",
+              md:experimentalMarkdown.value || ""
             },
             conversation_id:"settings_test"
           })
