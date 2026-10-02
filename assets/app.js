@@ -165,6 +165,21 @@
       },220);
     }
 
+    async function clearStateDb(){
+      try{
+        var db = await openDatabase();
+        await new Promise(function(resolve,reject){
+          var tx = db.transaction(DB_STORE,"readwrite");
+          tx.objectStore(DB_STORE).delete(DB_STATE_KEY);
+          tx.oncomplete = function(){ resolve(); };
+          tx.onerror = function(){ reject(tx.error); };
+          tx.onabort = function(){ reject(tx.error); };
+        });
+      }catch(error){
+        console.warn("IndexedDB clear failed",error);
+      }
+    }
+
     async function hydrateStateFromDb(){
       var stored = await readStateFromDb();
 
@@ -1555,12 +1570,19 @@
       }
     });
 
-    document.getElementById("clearAllBtn").addEventListener("click",function(){
+    document.getElementById("clearAllBtn").addEventListener("click",async function(){
       if(!confirm("متأكد تريد حذف جميع المحادثات من هذا الجهاز؟")) return;
+
+      clearTimeout(persistTimer);
+      await clearStateDb();
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(META_KEY);
+      localStorage.removeItem("ashur_ai_messages");
+
       state = loadState();
       activeId = state.activeId;
-      saveState();
+      await persistStateNow();
+
       closeSettings();
       renderAll();
       showToast("تم حذف المحادثات.");
@@ -1584,8 +1606,44 @@
     });
 
     if("serviceWorker" in navigator){
+      var reloadingForUpdate = false;
+
+      navigator.serviceWorker.addEventListener("controllerchange",function(){
+        if(reloadingForUpdate) return;
+        reloadingForUpdate = true;
+        window.location.reload();
+      });
+
       window.addEventListener("load",function(){
-        navigator.serviceWorker.register("/sw.js").catch(function(){});
+        navigator.serviceWorker.register("/sw.js").then(function(registration){
+          registration.update().catch(function(){});
+
+          registration.addEventListener("updatefound",function(){
+            var worker = registration.installing;
+            if(!worker) return;
+
+            worker.addEventListener("statechange",function(){
+              if(worker.state === "installed" && navigator.serviceWorker.controller){
+                var banner = document.getElementById("updateBanner");
+                if(banner) banner.classList.add("show");
+              }
+            });
+          });
+
+          var updateButton = document.getElementById("applyUpdateBtn");
+          if(updateButton){
+            updateButton.addEventListener("click",function(){
+              var waiting = registration.waiting;
+              if(waiting){
+                waiting.postMessage({type:"SKIP_WAITING"});
+              }else{
+                window.location.reload();
+              }
+            });
+          }
+        }).catch(function(error){
+          console.warn("Service worker registration failed",error);
+        });
       });
     }
 
