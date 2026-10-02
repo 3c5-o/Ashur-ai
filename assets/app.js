@@ -371,6 +371,11 @@
       }else if(action === "2"){
         if(confirm("حذف هذه المحادثة؟")){
           state.chats = state.chats.filter(function(c){return c.id !== chat.id;});
+          state.chats.forEach(function(item){
+            item.linkedChatIds = Array.isArray(item.linkedChatIds)
+              ? item.linkedChatIds.filter(function(id){ return id !== chat.id; })
+              : [];
+          });
           if(!state.chats.length){
             var fresh = {
               id:uid("chat"),title:"محادثة جديدة",mode:"general",
@@ -755,17 +760,9 @@
 
     function setGenerating(value){
       generating = value;
-      if(value){
-        sendBtn.textContent = "■";
-        sendBtn.classList.add("stop");
-        sendBtn.setAttribute("aria-label","إيقاف");
-        statusText.textContent = "جاري الرد...";
-      }else{
-        sendBtn.textContent = "↑";
-        sendBtn.classList.remove("stop");
-        sendBtn.setAttribute("aria-label","إرسال");
-        statusText.textContent = navigator.onLine ? "جاهز" : "غير متصل";
-      }
+      sendBtn.classList.toggle("stop",value);
+      sendBtn.setAttribute("aria-label",value ? "إيقاف" : "إرسال");
+      statusText.textContent = value ? "جاري الرد..." : (navigator.onLine ? "جاهز" : "غير متصل");
     }
 
     function showToast(text){
