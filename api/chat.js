@@ -1,17 +1,18 @@
 const { getClientIp, isRateLimited } = require("./_shared/rate-limit");
-const AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-const AI_MODEL = "openrouter/free";
 
-const EXPERIMENTAL_HOST = "camillecyrm.serv00.net";
-const DEFAULT_EXPERIMENTAL_URL = "https://camillecyrm.serv00.net/v1/chat/completions";
+const DEFAULT_AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+const DEFAULT_AI_MODEL = "openrouter/free";
+const EXPERIMENTAL_AI_ENDPOINT = "https://camillecyrm.serv00.net/v1/chat/completions";
 
 const MAX_TEXT_CHARS = 180000;
 const MAX_HISTORY_CHARS = 90000;
 const MAX_ATTACHMENT_TEXT = 100000;
-const MAX_TRAINING_CHARS = 60000;
+const MAX_CUSTOM_INSTRUCTIONS = 30000;
+const MAX_CUSTOM_KNOWLEDGE = 60000;
+const MAX_LINKED_CONTEXT = 35000;
 const MAX_IMAGE_DATA_CHARS = 3500000;
 
-const ALLOWED_EXPERIMENTAL_MODELS = new Set([
+const ALLOWED_MODELS = new Set([
   "auto",
   "gpt-6-astra",
   "gpt-6-sol",
@@ -105,19 +106,15 @@ function cleanAttachments(attachments) {
     }));
 }
 
+function sanitizeText(value, max) {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
 function publicError(status) {
-  if (status === 401 || status === 403) {
-    return "خدمة الذكاء الاصطناعي غير متاحة حالياً.";
-  }
-  if (status === 402) {
-    return "الخدمة وصلت إلى حد الاستخدام الحالي. جرّب لاحقاً.";
-  }
-  if (status === 413) {
-    return "حجم الطلب أكبر من الحد المسموح. قلل حجم الملفات أو الصور.";
-  }
-  if (status === 429) {
-    return "تم بلوغ الحد المؤقت للطلبات. انتظر قليلاً ثم أعد المحاولة.";
-  }
+  if (status === 401 || status === 403) return "الخدمة غير متاحة حالياً.";
+  if (status === 402) return "الخدمة وصلت إلى حد الاستخدام الحالي. جرّب لاحقاً.";
+  if (status === 413) return "حجم الطلب أكبر من الحد المسموح. قلل حجم الملفات أو النص.";
+  if (status === 429) return "تم بلوغ الحد المؤقت للطلبات. انتظر قليلاً ثم أعد المحاولة.";
   return "تعذر إكمال الطلب حالياً. أعد المحاولة بعد قليل.";
 }
 
@@ -138,19 +135,22 @@ function buildCombinedText(text, attachments) {
   return combinedText;
 }
 
-function buildSystemPrompt(mode, longOutput) {
+function buildSystemPrompt(mode, longOutput, customInstructions) {
   const parts = [
     "أنت Ashur AI، مساعد ذكي سريع وواضح.",
     "أجب باللغة التي يستخدمها المستخدم، واستخدم العربية العراقية عندما يلائم السياق.",
-    "لا تذكر اسم مزود النموذج أو المنصة الخلفية أو اسم النموذج أو أي تفاصيل تقنية داخلية.",
-    "لا تضف عبارات المصدر أو المزود أو النموذج المستخدم أو معلومات النظام.",
+    "لا تذكر اسم مزود النموذج أو المنصة الخلفية أو أي تفاصيل تقنية داخلية.",
     "استخدم Markdown عند الحاجة، وضع الأكواد داخل كتل كود كاملة مع اسم اللغة.",
     MODE_PROMPTS[mode] || MODE_PROMPTS.general
   ];
 
+  if (customInstructions) {
+    parts.push("تعليمات المستخدم المخصصة:", customInstructions);
+  }
+
   if (longOutput) {
     parts.push(
-      "في طلبات البرمجة الطويلة لا تختصر ولا تكتب placeholders مثل // باقي الكود.",
+      "في طلبات البرمجة الطويلة لا تختصر ولا تستخدم placeholders مثل // باقي الكود.",
       "أكمل الملفات المطلوبة قدر الإمكان.",
       "إذا انتهيت تماماً ضع السطر [[ASHUR_DONE]] في نهاية الرد.",
       "إذا بقي جزء لم يُكتب واستطعت وضع علامة قبل توقف الرد، ضع [[ASHUR_CONTINUE]]."
@@ -158,22 +158,6 @@ function buildSystemPrompt(mode, longOutput) {
   }
 
   return parts.join(" ");
-}
-
-function validateExperimentalUrl(rawUrl) {
-  try {
-    const parsed = new URL(rawUrl || DEFAULT_EXPERIMENTAL_URL);
-
-    if (parsed.protocol !== "https:") return null;
-    if (parsed.hostname !== EXPERIMENTAL_HOST) return null;
-    if (parsed.pathname !== "/v1/chat/completions") return null;
-
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return null;
-  }
 }
 
 function buildContinuationText(originalText, continuation) {
@@ -192,6 +176,46 @@ function buildContinuationText(originalText, continuation) {
     "حافظ على نفس أسماء الملفات ونفس البنية.",
     "إذا انتهيت تماماً ضع [[ASHUR_DONE]] في النهاية."
   ].join("\n");
+}
+
+function buildMessages({
+  mode,
+  longOutput,
+  customInstructions,
+  customKnowledge,
+  linkedContext,
+  history,
+  userContent
+}) {
+  const messages = [
+    {
+      role: "system",
+      content: buildSystemPrompt(mode, longOutput, customInstructions)
+    }
+  ];
+
+  if (customKnowledge) {
+    messages.push({
+      role: "system",
+      content:
+        "معلومات مرجعية إضافية من المستخدم. استخدمها عند ارتباطها بالسؤال، ولا تدّعِ أنها أحدث من تاريخها:\n" +
+        customKnowledge
+    });
+  }
+
+  if (linkedContext) {
+    messages.push({
+      role: "system",
+      content:
+        "سياق مستدعى من محادثات أخرى اختار المستخدم ربطها بهذه المحادثة. استخدمه كمرجع فقط، ولا تخلط سجلات المحادثات ولا تعتبره رسالة جديدة:\n" +
+        linkedContext
+    });
+  }
+
+  messages.push(...history);
+  messages.push({ role: "user", content: userContent });
+
+  return messages;
 }
 
 async function streamOpenAICompatibleResponse(upstream, res) {
@@ -245,64 +269,49 @@ async function handleExperimentalSource({
   temperature,
   mode,
   history,
-  longOutput
+  longOutput,
+  model,
+  customInstructions,
+  customKnowledge,
+  linkedContext
 }) {
-  const experimental = body.experimental || {};
-  const endpoint = validateExperimentalUrl(experimental.url);
-
-  if (!endpoint) {
-    return res.status(400).json({
-      status: false,
-      error: "رابط المصدر التجريبي غير مسموح."
-    });
-  }
-
-  const key = String(
-    process.env.AIGATE_API_KEY ||
-    experimental.key ||
-    ""
-  ).trim();
+  const key = String(process.env.AIGATE_API_KEY || "").trim();
 
   if (!key) {
-    return res.status(401).json({
+    return res.status(503).json({
       status: false,
-      error: "المصدر التجريبي يحتاج مفتاح وصول."
+      error: "إعداد النموذج المحدد غير متاح حالياً."
     });
   }
 
-  const requestedModel = String(experimental.model || "gpt-5-6").trim();
-  const model = ALLOWED_EXPERIMENTAL_MODELS.has(requestedModel)
-    ? requestedModel
-    : "gpt-5-6";
-
-  const training = String(experimental.training || "").slice(0, MAX_TRAINING_CHARS);
-  const markdown = String(experimental.md || "").slice(0, MAX_TRAINING_CHARS);
+  const selectedModel =
+    model && model !== "auto" && ALLOWED_MODELS.has(model)
+      ? model
+      : "gpt-5-6";
 
   const combinedText = buildCombinedText(text, attachments).trim();
   const promptText = buildContinuationText(combinedText, body.continuation);
 
-  if (!promptText) {
-    return res.status(400).json({
-      status: false,
-      error: "المصدر التجريبي يحتاج نصاً للإرسال."
-    });
-  }
-
-  const messages = [
-    { role: "system", content: buildSystemPrompt(mode, longOutput) },
-    ...history,
-    { role: "user", content: promptText }
-  ];
+  const messages = buildMessages({
+    mode,
+    longOutput,
+    customInstructions,
+    customKnowledge,
+    linkedContext,
+    history,
+    userContent: promptText
+  });
 
   const requestBody = {
-    model,
+    model: selectedModel,
     messages,
     temperature,
     stream: true
   };
 
-  if (training) requestBody.training = training;
-  if (markdown) requestBody.md = markdown;
+  // Preserve support for the experimental provider's optional knowledge fields.
+  if (customInstructions) requestBody.training = customInstructions;
+  if (customKnowledge) requestBody.md = customKnowledge;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 55000);
@@ -310,7 +319,7 @@ async function handleExperimentalSource({
   let upstream;
 
   try {
-    upstream = await fetch(endpoint, {
+    upstream = await fetch(EXPERIMENTAL_AI_ENDPOINT, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${key}`,
@@ -339,14 +348,7 @@ async function handleExperimentalSource({
       );
     } catch {}
 
-    console.error("Experimental AI error:", upstream.status, detail);
-
-    if (upstream.status === 401 || /مفتاح|key|access|unauthorized/i.test(detail)) {
-      return res.status(401).json({
-        status: false,
-        error: "المصدر التجريبي رفض مفتاح الوصول."
-      });
-    }
+    console.error("Selected AI route error:", upstream.status, detail);
 
     return res.status(upstream.status).json({
       status: false,
@@ -375,7 +377,10 @@ async function handleDefaultSource({
   temperature,
   mode,
   history,
-  longOutput
+  longOutput,
+  customInstructions,
+  customKnowledge,
+  linkedContext
 }) {
   const apiKey = String(process.env.OPENROUTER_API_KEY || "").trim();
 
@@ -413,11 +418,15 @@ async function handleDefaultSource({
     userContent = promptText;
   }
 
-  const messages = [
-    { role: "system", content: buildSystemPrompt(mode, longOutput) },
-    ...history,
-    { role: "user", content: userContent }
-  ];
+  const messages = buildMessages({
+    mode,
+    longOutput,
+    customInstructions,
+    customKnowledge,
+    linkedContext,
+    history,
+    userContent
+  });
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 55000);
@@ -425,7 +434,7 @@ async function handleDefaultSource({
   let upstream;
 
   try {
-    upstream = await fetch(AI_ENDPOINT, {
+    upstream = await fetch(DEFAULT_AI_ENDPOINT, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -435,7 +444,7 @@ async function handleDefaultSource({
         "X-Title": "Ashur AI"
       },
       body: JSON.stringify({
-        model: AI_MODEL,
+        model: DEFAULT_AI_MODEL,
         messages,
         temperature,
         stream: true
@@ -456,7 +465,7 @@ async function handleDefaultSource({
       details = data?.error?.message || data?.message || "";
     } catch {}
 
-    console.error("AI upstream error:", upstream.status, details);
+    console.error("Default AI route error:", upstream.status, details);
 
     return res.status(upstream.status).json({
       status: false,
@@ -500,6 +509,7 @@ module.exports = async function handler(req, res) {
   }
 
   const ip = getClientIp(req);
+
   if (await isRateLimited("chat:" + ip, 40, 600)) {
     return res.status(429).json({
       status: false,
@@ -546,31 +556,59 @@ module.exports = async function handler(req, res) {
     const history = cleanHistory(body.history);
     const longOutput = Boolean(body.long_output);
     const hasImages = attachments.some(item => item.kind === "image");
+
+    const model = ALLOWED_MODELS.has(String(body.model || "auto"))
+      ? String(body.model || "auto")
+      : "auto";
+
+    const customInstructions = sanitizeText(
+      body.custom_instructions,
+      MAX_CUSTOM_INSTRUCTIONS
+    );
+
+    const customKnowledge = sanitizeText(
+      body.custom_knowledge,
+      MAX_CUSTOM_KNOWLEDGE
+    );
+
+    const linkedContext = sanitizeText(
+      body.linked_context,
+      MAX_LINKED_CONTEXT
+    );
+
     const combinedChars =
       text.length +
-      attachments.reduce((sum, item) => sum + (item.text?.length || 0), 0);
+      attachments.reduce((sum, item) => sum + (item.text?.length || 0), 0) +
+      customKnowledge.length +
+      linkedContext.length;
 
-    if (combinedChars > 260000) {
+    if (combinedChars > 290000) {
       return res.status(413).json({
         status: false,
-        error: "حجم النص والملفات المرفقة كبير جداً لطلب واحد."
+        error: "حجم النص والسياق والملفات كبير جداً لطلب واحد."
       });
     }
 
-    const hasExperimentalServerKey = Boolean(
+    const hasExperimentalKey = Boolean(
       String(process.env.AIGATE_API_KEY || "").trim()
     );
 
-    // Large text requests are routed to the experimental text path when its
-    // server-side key is available. Image attachments stay on the vision path.
-    const shouldUseExperimental =
+    const specificModelSelected = model !== "auto";
+    const autoPrefersExperimental =
       !hasImages &&
+      hasExperimentalKey &&
       (
-        body.source === "experimental" ||
-        (combinedChars > 90000 && hasExperimentalServerKey)
+        mode === "coding" ||
+        longOutput ||
+        combinedChars > 90000
       );
 
-    if (shouldUseExperimental) {
+    const useExperimental =
+      !hasImages &&
+      hasExperimentalKey &&
+      (specificModelSelected || autoPrefersExperimental);
+
+    if (useExperimental) {
       return await handleExperimentalSource({
         res,
         body,
@@ -579,7 +617,11 @@ module.exports = async function handler(req, res) {
         temperature,
         mode,
         history,
-        longOutput
+        longOutput,
+        model,
+        customInstructions,
+        customKnowledge,
+        linkedContext
       });
     }
 
@@ -591,7 +633,10 @@ module.exports = async function handler(req, res) {
       temperature,
       mode,
       history,
-      longOutput
+      longOutput,
+      customInstructions,
+      customKnowledge,
+      linkedContext
     });
 
   } catch (error) {
