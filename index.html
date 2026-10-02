@@ -3,103 +3,167 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b0f0e">
+  <meta name="theme-color" content="#07110d">
   <meta name="description" content="Ashur AI">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <title>Ashur AI</title>
   <link rel="stylesheet" href="/assets/app.css">
+  <title>Ashur AI</title>
 </head>
 <body>
-  <div class="app">
+  <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <div class="side-head">
-        <div class="brand">
-          <div class="logo">A</div>
-          <div>
-            <h1>Ashur AI</h1>
-            <small>مساعدك الذكي</small>
+      <div class="sidebar-top">
+        <div class="brand-row">
+          <div class="brand-mark"><span>A</span></div>
+          <div class="brand-copy">
+            <strong>Ashur AI</strong>
+            <small>مساحة ذكية للعمل والإبداع</small>
           </div>
         </div>
-        <button class="new-chat" id="newChatBtn">محادثة جديدة</button>
+
+        <button class="new-chat" id="newChatBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>محادثة جديدة</span>
+        </button>
+
+        <div class="sidebar-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="chatSearch" type="search" placeholder="ابحث في محادثاتك...">
+        </div>
       </div>
 
-      <div class="search-wrap">
-        <input class="search" id="chatSearch" type="search" placeholder="بحث في المحادثات...">
+      <div class="sidebar-section-title">
+        <span>المحادثات</span>
+        <span class="sidebar-dot"></span>
       </div>
-
       <div class="chat-list" id="chatList"></div>
 
-      <div class="side-foot">
-        <button class="soft-btn" id="exportBtn">تصدير</button>
-        <button class="soft-btn" id="settingsBtn">الإعدادات</button>
+      <div class="sidebar-bottom">
+        <button class="sidebar-action" id="exportBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 21h14"/></svg>
+          <span>تصدير المحادثة</span>
+        </button>
+        <button class="sidebar-action" id="settingsBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06-2.78 2.78-.06-.06A1.8 1.8 0 0 0 15 19.4a1.8 1.8 0 0 0-1 .6 1.8 1.8 0 0 0-.42 1.17V21h-3.16v-.17A1.8 1.8 0 0 0 10 19.66a1.8 1.8 0 0 0-1-.6 1.8 1.8 0 0 0-1.98.36l-.06.06-2.78-2.78.06-.06A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-.6-1 1.8 1.8 0 0 0-1.17-.42H2.66v-3.16h.17A1.8 1.8 0 0 0 4 10a1.8 1.8 0 0 0 .6-1 1.8 1.8 0 0 0-.36-1.98l-.06-.06 2.78-2.78.06.06A1.8 1.8 0 0 0 9 4.6a1.8 1.8 0 0 0 1-.6 1.8 1.8 0 0 0 .42-1.17V2.66h3.16v.17A1.8 1.8 0 0 0 14 4a1.8 1.8 0 0 0 1 .6 1.8 1.8 0 0 0 1.98-.36l.06-.06 2.78 2.78-.06.06A1.8 1.8 0 0 0 19.4 9c.2.37.52.7.9 1 .35.24.77.4 1.17.42h.17v3.16h-.17A1.8 1.8 0 0 0 20.3 14c-.38.3-.7.63-.9 1Z"/></svg>
+          <span>الإعدادات</span>
+        </button>
       </div>
     </aside>
 
     <div class="backdrop" id="backdrop"></div>
 
-    <main class="main">
+    <main class="workspace">
       <header class="topbar">
-        <button class="icon-btn menu-btn" id="menuBtn" aria-label="القائمة">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-        </button>
-
-        <div class="top-title">
-          <strong id="activeTitle">محادثة جديدة</strong>
-          <div class="status" id="statusText">جاهز</div>
+        <div class="topbar-right">
+          <button class="round-btn menu-btn" id="menuBtn" type="button" aria-label="القائمة">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          </button>
+          <div class="conversation-heading">
+            <strong id="activeTitle">محادثة جديدة</strong>
+            <div class="conversation-state">
+              <span class="online-indicator"></span>
+              <span id="statusText">جاهز</span>
+            </div>
+          </div>
         </div>
 
-        <select class="mode-select" id="modeSelect" aria-label="وضع المساعد">
-          <option value="general">عام</option>
-          <option value="writing">كتابة</option>
-          <option value="coding">برمجة</option>
-          <option value="study">دراسة</option>
-          <option value="summary">تلخيص</option>
-          <option value="translate">ترجمة</option>
-        </select>
+        <div class="topbar-controls">
+          <div class="select-shell model-shell">
+            <span class="select-label">النموذج</span>
+            <select id="modelSelect" aria-label="اختيار النموذج">
+              <option value="auto">تلقائي</option>
+              <option value="gpt-5-6">GPT-5-6</option>
+              <option value="gpt-6-sol">GPT-6 Sol</option>
+              <option value="gpt-6-luna">GPT-6 Luna</option>
+              <option value="gpt-6-astra">GPT-6 Astra</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="deepseek-v3.2">DeepSeek V3.2</option>
+              <option value="qwen-30b">Qwen 30B</option>
+              <option value="llama-3.3-70b-instruct">Llama 3.3 70B</option>
+              <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+            </select>
+          </div>
 
-        <button class="icon-btn" id="topNewBtn" aria-label="محادثة جديدة">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-        </button>
+          <div class="select-shell compact-select">
+            <select id="modeSelect" aria-label="وضع المساعد">
+              <option value="general">عام</option>
+              <option value="writing">كتابة</option>
+              <option value="coding">برمجة</option>
+              <option value="study">دراسة</option>
+              <option value="summary">تلخيص</option>
+              <option value="translate">ترجمة</option>
+            </select>
+          </div>
+
+          <button class="round-btn link-chat-btn" id="linkChatsBtn" type="button" aria-label="استدعاء محادثة">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l2-2a5 5 0 0 0-7.07-7.07l-1.15 1.15"/><path d="M14 11a5 5 0 0 0-7.54-.54l-2 2a5 5 0 0 0 7.07 7.07l1.15-1.15"/></svg>
+            <span class="link-count" id="linkedCount">0</span>
+          </button>
+
+          <button class="round-btn" id="topNewBtn" type="button" aria-label="محادثة جديدة">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+        </div>
       </header>
 
       <section class="messages" id="messages">
         <div class="empty" id="emptyState">
+          <div class="empty-glow"></div>
           <div class="empty-inner">
-            <div class="hero-logo">A</div>
-            <h2>كيف أساعدك اليوم؟</h2>
-            <p>اكتب سؤالك، أرفق صورة أو ملف، أو اختر فكرة للبدء.</p>
+            <div class="hero-mark"><span>A</span><i></i></div>
+            <div class="eyebrow">ASHUR INTELLIGENCE</div>
+            <h1>شنو تريد ننجز اليوم؟</h1>
+            <p>محادثة، برمجة طويلة، تحليل ملف، أو إنشاء صورة — اختار النموذج أو خلي Ashur يختار تلقائيًا.</p>
             <div class="suggestions">
-              <button class="suggestion" data-prompt="رتب لي خطة واضحة لمشروع جديد من الفكرة إلى الإطلاق">رتب لي خطة مشروع كاملة</button>
-              <button class="suggestion" data-prompt="ساعدني في كتابة نص احترافي ومختصر">ساعدني في الكتابة</button>
-              <button class="suggestion" data-prompt="ساعدني في حل مشكلة برمجية واشرحها خطوة بخطوة">ساعدني في البرمجة</button>
-              <button class="suggestion" data-prompt="لخص لي النص الذي سأرسله بشكل مرتب وواضح">لخص لي محتوى</button>
+              <button class="suggestion" data-mode="coding" data-prompt="ابني لي مشروع ويب احترافي كامل بملفات منظمة وكود قابل للتشغيل">
+                <span class="suggestion-icon">⌘</span>
+                <span><b>بناء مشروع</b><small>كود طويل وملفات مرتبة</small></span>
+              </button>
+              <button class="suggestion" data-mode="general" data-prompt="حلل لي الفكرة التالية ورتبها إلى خطوات تنفيذ واضحة">
+                <span class="suggestion-icon">◇</span>
+                <span><b>تحليل فكرة</b><small>من الفكرة إلى التنفيذ</small></span>
+              </button>
+              <button class="suggestion" data-image="1" data-prompt="صمم صورة سينمائية احترافية">
+                <span class="suggestion-icon">▣</span>
+                <span><b>إنشاء صورة</b><small>Auto يختار محرك الصورة</small></span>
+              </button>
+              <button class="suggestion" data-mode="summary" data-prompt="سأرسل لك ملفاً، استخرج أهم المعلومات ورتبها بشكل واضح">
+                <span class="suggestion-icon">≡</span>
+                <span><b>تحليل ملف</b><small>PDF ونصوص وأكواد</small></span>
+              </button>
             </div>
           </div>
         </div>
       </section>
 
       <div class="composer-area">
+        <div class="linked-context-strip" id="linkedContextStrip"></div>
         <div class="attachment-bar" id="attachmentBar"></div>
+
         <div class="composer">
-          <button class="icon-btn" id="attachBtn" aria-label="إرفاق ملف">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7L9.2 18.2a2 2 0 1 1-2.8-2.8l8.5-8.5"/></svg>
+          <div class="composer-tools">
+            <button class="tool-btn" id="attachBtn" type="button" aria-label="إرفاق ملف">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.4 11.6 12 21a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7L9.2 18.2a2 2 0 1 1-2.8-2.8l8.5-8.5"/></svg>
+            </button>
+            <button class="tool-btn" id="imageBtn" type="button" aria-label="إنشاء صورة">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 15-4-4L7 20"/></svg>
+            </button>
+            <button class="tool-btn" id="voiceBtn" type="button" aria-label="إدخال صوتي">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+            </button>
+          </div>
+
+          <textarea id="messageInput" rows="1" maxlength="180000" placeholder="اكتب رسالتك..."></textarea>
+
+          <button class="send-btn" id="sendBtn" type="button" aria-label="إرسال">
+            <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            <span class="stop-icon">■</span>
           </button>
-
-          <button class="icon-btn" id="voiceBtn" aria-label="إدخال صوتي">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
-          </button>
-
-          <button class="icon-btn" id="imageBtn" aria-label="إنشاء صورة">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="m21 15-4-4L7 20"/></svg>
-          </button>
-
-          <textarea id="messageInput" rows="1" maxlength="180000" placeholder="اكتب رسالتك أو الصق كوداً طويلاً..."></textarea>
-
-          <button class="send-btn" id="sendBtn" aria-label="إرسال">↑</button>
         </div>
-        <div class="composer-note">
-          <span>قد يخطئ الذكاء الاصطناعي؛ راجع المعلومات المهمة.</span>
+
+        <div class="composer-meta">
+          <span>Shift + Enter لسطر جديد</span>
           <span class="usage" id="inputUsage">0 حرف · 1 سطر</span>
         </div>
       </div>
@@ -109,175 +173,106 @@
   <input id="fileInput" type="file" hidden multiple accept="image/png,image/jpeg,image/webp,.txt,.md,.json,.csv,.html,.css,.js,.ts,.xml,.pdf">
 
   <div class="modal" id="settingsModal">
-    <div class="modal-card">
+    <div class="modal-card settings-card">
       <div class="modal-head">
-        <h3>الإعدادات</h3>
-        <button class="icon-btn" id="closeSettings" aria-label="إغلاق">×</button>
+        <div>
+          <span class="modal-eyebrow">PREFERENCES</span>
+          <h3>إعدادات Ashur</h3>
+        </div>
+        <button class="modal-close" id="closeSettings" type="button">×</button>
       </div>
-      <div class="modal-body">
-        <div class="setting-row">
-          <div><label>المظهر</label><small>داكن أو فاتح</small></div>
-          <select id="themeSetting">
-            <option value="dark">داكن</option>
-            <option value="light">فاتح</option>
-          </select>
-        </div>
 
-        <div class="setting-row">
-          <div><label>حجم الخط</label><small>حجم نص المحادثة</small></div>
-          <input id="fontSetting" type="range" min="13" max="19" step="1">
-        </div>
-
-        <div class="setting-row">
-          <div><label>الإبداع</label><small>كلما ارتفع صار الرد أكثر تنوعاً</small></div>
-          <input id="tempSetting" type="number" min="0" max="1.5" step="0.1">
-        </div>
-
-        <div class="setting-row">
-          <div><label>مصدر الرد</label><small>اختيار المصدر الأساسي أو مصدر تجريبي</small></div>
-          <select id="sourceSetting">
-            <option value="default">الأساسي</option>
-            <option value="experimental">تجريبي</option>
-          </select>
-        </div>
-
-        <div class="experimental-box" id="experimentalSettings">
-          <label for="experimentalUrl">رابط المصدر التجريبي</label>
-          <input
-            class="setting-text-input"
-            id="experimentalUrl"
-            type="url"
-            value="https://camillecyrm.serv00.net/v1/chat/completions"
-            autocomplete="off"
-          >
-
-          <label for="experimentalModel">الموديل</label>
-          <select id="experimentalModel">
-            <option value="gpt-5-6">GPT-5-6</option>
-            <option value="auto">Auto</option>
-            <option value="gpt-6-astra">GPT-6 Astra</option>
-            <option value="gpt-6-sol">GPT-6 Sol</option>
-            <option value="gpt-6-luna">GPT-6 Luna</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="gpt-4o-mini">GPT-4o Mini</option>
-            <option value="gpt-5-mini">GPT-5 Mini</option>
-            <option value="gpt-5-nano">GPT-5 Nano</option>
-            <option value="o1">o1</option>
-            <option value="o1-mini">o1 Mini</option>
-            <option value="o3-mini">o3 Mini</option>
-            <option value="deepseek-v3.2">DeepSeek V3.2</option>
-            <option value="qwen-30b">Qwen 30B</option>
-            <option value="llama-3.3-70b-instruct">Llama 3.3 70B</option>
-            <option value="gemma-4">Gemma 4</option>
-            <option value="doubao-seed-2.0-pro">Doubao 2.0 Pro</option>
-            <option value="doubao-seed-2.0-code">Doubao 2.0 Code</option>
-            <option value="deepai-standard">DeepAI Standard</option>
-            <option value="deepai-online">DeepAI Online</option>
-            <option value="gemini-web">Gemini Web</option>
-            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-          </select>
-
-          <label for="experimentalKey">مفتاح الوصول</label>
-          <input
-            class="setting-text-input"
-            id="experimentalKey"
-            type="password"
-            placeholder="sk-..."
-            autocomplete="off"
-          >
-
-          <label for="experimentalTraining">معلومات التدريب</label>
-          <textarea
-            class="setting-textarea"
-            id="experimentalTraining"
-            placeholder="مثال: اسم المشروع Ashur AI، أجب بالعربية، هذه معلومات الخدمة..."
-          ></textarea>
-
-          <label for="experimentalMarkdown">Markdown / Docs</label>
-          <textarea
-            class="setting-textarea"
-            id="experimentalMarkdown"
-            placeholder="معلومات منظمة أو توثيق بصيغة Markdown..."
-          ></textarea>
-
-          <div class="experimental-note">
-            إذا تركت المفتاح فارغاً يمكن استخدام مفتاح الخادم AIGATE_API_KEY عند ضبطه في Vercel. وإذا أدخلته هنا يُحفظ مؤقتاً داخل جلسة المتصفح فقط.
+      <div class="modal-body settings-grid">
+        <div class="settings-group">
+          <div class="settings-group-title">المظهر</div>
+          <div class="setting-row">
+            <div><label>الثيم</label><small>اختر الداكن أو الفاتح</small></div>
+            <select id="themeSetting"><option value="dark">داكن</option><option value="light">فاتح</option></select>
           </div>
-
-          <button class="test-source-btn" id="testExperimentalBtn" type="button">
-            اختبار الاتصال
-          </button>
-        </div>
-
-        <div class="setting-row" id="fallbackRow">
-          <div>
-            <label>الرجوع التلقائي</label>
-            <small>استخدام المصدر الأساسي إذا فشل المصدر التجريبي</small>
+          <div class="setting-row">
+            <div><label>حجم الخط</label><small>حجم نص المحادثة</small></div>
+            <input id="fontSetting" type="range" min="13" max="19" step="1">
           </div>
-          <label class="switch">
-            <input id="experimentalFallback" type="checkbox">
-            <span class="slider"></span>
-          </label>
         </div>
 
-        <div class="setting-row">
-          <div>
-            <label>إخراج برمجي طويل</label>
-            <small>يكمل الكود تلقائياً داخل نفس الرسالة عند الحاجة</small>
+        <div class="settings-group">
+          <div class="settings-group-title">سلوك المساعد</div>
+          <div class="setting-row">
+            <div><label>الإبداع</label><small>درجة تنوع الرد</small></div>
+            <input id="tempSetting" type="number" min="0" max="1.5" step="0.1">
           </div>
-          <label class="switch">
-            <input id="longOutputSetting" type="checkbox">
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div class="setting-row">
-          <div>
-            <label>أقصى تكملات تلقائية</label>
-            <small>للمشاريع والأكواد الطويلة جداً</small>
+          <div class="setting-row">
+            <div><label>إخراج برمجي طويل</label><small>يكمل الكود تلقائيًا عند الحاجة</small></div>
+            <label class="switch"><input id="longOutputSetting" type="checkbox"><span class="slider"></span></label>
           </div>
-          <select id="continuationSetting">
-            <option value="3">3</option>
-            <option value="6">6</option>
-            <option value="8">8</option>
-          </select>
+          <div class="setting-row">
+            <div><label>أقصى تكملات</label><small>للردود البرمجية الكبيرة</small></div>
+            <select id="continuationSetting"><option value="3">3</option><option value="6">6</option><option value="8">8</option></select>
+          </div>
+          <div class="setting-row">
+            <div><label>Enter للإرسال</label><small>Shift + Enter لسطر جديد</small></div>
+            <label class="switch"><input id="enterSetting" type="checkbox"><span class="slider"></span></label>
+          </div>
         </div>
 
-        <div class="setting-row">
-          <div><label>Enter للإرسال</label><small>Shift + Enter لسطر جديد</small></div>
-          <label class="switch">
-            <input id="enterSetting" type="checkbox">
-            <span class="slider"></span>
-          </label>
+        <div class="settings-group">
+          <div class="settings-group-title">تخصيص Ashur</div>
+          <label class="field-label" for="customInstructions">تعليمات مخصصة</label>
+          <textarea class="settings-textarea" id="customInstructions" maxlength="30000" placeholder="مثال: جاوبني باختصار، ركز على البرمجة، استخدم اللهجة العراقية..."></textarea>
+
+          <label class="field-label" for="customKnowledge">معلومات إضافية</label>
+          <textarea class="settings-textarea" id="customKnowledge" maxlength="60000" placeholder="معلومات عن مشروعك أو طريقة العمل التي تريد من Ashur يعرفها..."></textarea>
         </div>
 
-        <div class="setting-row" id="installRow" style="display:none">
-          <div><label>تثبيت التطبيق</label><small>إضافة Ashur AI للشاشة الرئيسية</small></div>
-          <button class="soft-btn" id="installBtn" style="padding:0 14px">تثبيت</button>
+        <div class="settings-group">
+          <div class="settings-group-title">التطبيق</div>
+          <div class="setting-row" id="installRow" style="display:none">
+            <div><label>تثبيت التطبيق</label><small>إضافة Ashur للشاشة الرئيسية</small></div>
+            <button class="mini-primary" id="installBtn" type="button">تثبيت</button>
+          </div>
+          <button class="danger-btn" id="clearAllBtn" type="button">حذف جميع المحادثات من هذا الجهاز</button>
         </div>
-
-        <div style="height:14px"></div>
-        <button class="danger-btn" id="clearAllBtn">حذف جميع المحادثات من هذا الجهاز</button>
       </div>
     </div>
   </div>
 
   <div class="modal" id="imageModal">
-    <div class="modal-card">
+    <div class="modal-card image-card">
       <div class="modal-head">
-        <h3>إنشاء صورة</h3>
-        <button class="icon-btn" id="closeImageModal" aria-label="إغلاق">×</button>
+        <div>
+          <span class="modal-eyebrow">IMAGE STUDIO</span>
+          <h3>إنشاء صورة</h3>
+        </div>
+        <button class="modal-close" id="closeImageModal" type="button">×</button>
       </div>
       <div class="modal-body image-form">
-        <textarea id="imagePrompt" maxlength="5000" placeholder="اوصف الصورة بالتفصيل..."></textarea>
+        <textarea id="imagePrompt" maxlength="5000" placeholder="اوصف الصورة، الإضاءة، الأسلوب، زاوية التصوير والتفاصيل..."></textarea>
+        <label class="field-label" for="imageModel">نموذج الصور</label>
         <select id="imageModel">
-          <option value="auto">تلقائي</option>
-          <option value="flux">عام</option>
-          <option value="flux-realism">واقعي</option>
-          <option value="flux-anime">أنمي</option>
-          <option value="sana">تفاصيل عالية</option>
+          <option value="auto">Auto — اختيار تلقائي</option>
+          <option value="flux">FLUX — عام ومتوازن</option>
+          <option value="flux-realism">FLUX Realism — واقعي وفوتوغرافي</option>
+          <option value="flux-anime">FLUX Anime — أنمي ورسوم</option>
+          <option value="sana">Sana — تفاصيل ودقة عالية</option>
         </select>
-        <button class="primary-btn" id="generateImageBtn" type="button">إنشاء الصورة</button>
+        <button class="primary-btn" id="generateImageBtn" type="button">إنشاء داخل المحادثة</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="linkModal">
+    <div class="modal-card link-card">
+      <div class="modal-head">
+        <div>
+          <span class="modal-eyebrow">CONTEXT LINKS</span>
+          <h3>استدعاء محادثة</h3>
+        </div>
+        <button class="modal-close" id="closeLinkModal" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="link-help">كل محادثة تبقى مستقلة. اختار محادثات تريد من Ashur يستدعي جزءًا من سياقها فقط عند الرد هنا.</p>
+        <div class="linked-chat-list" id="linkedChatList"></div>
+        <button class="secondary-wide" id="clearLinksBtn" type="button">إلغاء كل الاستدعاءات</button>
       </div>
     </div>
   </div>
