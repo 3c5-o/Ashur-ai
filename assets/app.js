@@ -3,6 +3,12 @@
 
     var STORAGE_KEY = "ashur_ai_state_v4";
     var SETTINGS_KEY = "ashur_ai_settings_v4";
+    var META_KEY = "ashur_ai_meta_v5";
+    var DB_NAME = "ashur_ai_db";
+    var DB_STORE = "app";
+    var DB_STATE_KEY = "state";
+    var dbPromise = null;
+    var persistTimer = null;
 
     var state = loadState();
     var settings = loadSettings();
@@ -86,6 +92,92 @@
       applySettings();
     }
 
+    function openDatabase(){
+      if(dbPromise) return dbPromise;
+
+      dbPromise = new Promise(function(resolve,reject){
+        if(!("indexedDB" in window)){
+          reject(new Error("IndexedDB غير مدعوم"));
+          return;
+        }
+
+        var request = indexedDB.open(DB_NAME,1);
+
+        request.onupgradeneeded = function(){
+          var db = request.result;
+          if(!db.objectStoreNames.contains(DB_STORE)){
+            db.createObjectStore(DB_STORE);
+          }
+        };
+
+        request.onsuccess = function(){ resolve(request.result); };
+        request.onerror = function(){ reject(request.error || new Error("تعذر فتح التخزين")); };
+      });
+
+      return dbPromise;
+    }
+
+    async function readStateFromDb(){
+      try{
+        var db = await openDatabase();
+        return await new Promise(function(resolve,reject){
+          var tx = db.transaction(DB_STORE,"readonly");
+          var store = tx.objectStore(DB_STORE);
+          var req = store.get(DB_STATE_KEY);
+          req.onsuccess = function(){ resolve(req.result || null); };
+          req.onerror = function(){ reject(req.error); };
+        });
+      }catch(error){
+        return null;
+      }
+    }
+
+    async function persistStateNow(){
+      try{
+        var db = await openDatabase();
+        var snapshot = JSON.parse(JSON.stringify(state));
+        await new Promise(function(resolve,reject){
+          var tx = db.transaction(DB_STORE,"readwrite");
+          var store = tx.objectStore(DB_STORE);
+          store.put(snapshot,DB_STATE_KEY);
+          tx.oncomplete = function(){ resolve(); };
+          tx.onerror = function(){ reject(tx.error); };
+          tx.onabort = function(){ reject(tx.error); };
+        });
+
+        localStorage.setItem(META_KEY,JSON.stringify({
+          activeId:activeId,
+          updatedAt:Date.now()
+        }));
+
+        // Remove old large LocalStorage state only after IndexedDB has a valid copy.
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem("ashur_ai_messages");
+      }catch(error){
+        console.warn("IndexedDB persist failed",error);
+      }
+    }
+
+    function schedulePersist(){
+      clearTimeout(persistTimer);
+      persistTimer = setTimeout(function(){
+        persistStateNow();
+      },220);
+    }
+
+    async function hydrateStateFromDb(){
+      var stored = await readStateFromDb();
+
+      if(stored && Array.isArray(stored.chats) && stored.chats.length){
+        state = stored;
+        activeId = stored.activeId || stored.chats[0].id;
+        return;
+      }
+
+      // First run after upgrade: migrate current LocalStorage state into IndexedDB.
+      await persistStateNow();
+    }
+
     function loadState(){
       try{
         var parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
@@ -119,20 +211,7 @@
 
     function saveState(){
       state.activeId = activeId;
-      try{
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      }catch(error){
-        try{
-          state.chats = state.chats
-            .sort(function(a,b){return b.updatedAt - a.updatedAt;})
-            .slice(0,12);
-          state.chats.forEach(function(chat){
-            if(chat.messages.length > 60) chat.messages = chat.messages.slice(-60);
-          });
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-          showToast("تم تنظيف أقدم المحادثات للحفاظ على مساحة التخزين.");
-        }catch(ignore){}
-      }
+      schedulePersist();
     }
 
     function currentChat(){
@@ -411,13 +490,15 @@
               '<a href="' + escapeHtml(msg.image) + '" target="_blank" rel="noopener noreferrer">فتح الصورة</a>' +
               '<button type="button" data-image-download="' + escapeHtml(msg.image) + '">تنزيل</button>' +
             '</div>';
+        }else if(msg.streaming){
+          bubble.classList.add("streaming-plain");
+          bubble.textContent = msg.text || "";
+          var caret = document.createElement("span");
+          caret.className = "typing-caret";
+          bubble.appendChild(caret);
         }else{
+          bubble.classList.remove("streaming-plain");
           bubble.innerHTML = renderMarkdown(msg.text || "");
-          if(msg.streaming){
-            var caret = document.createElement("span");
-            caret.className = "typing-caret";
-            bubble.appendChild(caret);
-          }
         }
       }else{
         bubble.textContent = msg.text || "";
@@ -478,13 +559,15 @@
               '<a href="' + escapeHtml(msg.image) + '" target="_blank" rel="noopener noreferrer">فتح الصورة</a>' +
               '<button type="button" data-image-download="' + escapeHtml(msg.image) + '">تنزيل</button>' +
             '</div>';
+        }else if(msg.streaming){
+          bubble.classList.add("streaming-plain");
+          bubble.textContent = msg.text || "";
+          var caret = document.createElement("span");
+          caret.className = "typing-caret";
+          bubble.appendChild(caret);
         }else{
+          bubble.classList.remove("streaming-plain");
           bubble.innerHTML = renderMarkdown(msg.text || "");
-          if(msg.streaming){
-            var caret = document.createElement("span");
-            caret.className = "typing-caret";
-            bubble.appendChild(caret);
-          }
         }
       }else{
         bubble.textContent = msg.text || "";
@@ -557,6 +640,7 @@
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
       var lastSave = 0;
+      var lastRender = 0;
 
       while(true){
         var part = await reader.read();
@@ -565,15 +649,23 @@
         var chunk = decoder.decode(part.value,{stream:true});
         if(chunk){
           assistantMsg.text += chunk;
-          refreshMessage(assistantMsg);
-          scrollBottom(false);
 
-          if(Date.now() - lastSave > 900){
+          var now = Date.now();
+          if(now - lastRender >= 70){
+            refreshMessage(assistantMsg);
+            scrollBottom(false);
+            lastRender = now;
+          }
+
+          if(now - lastSave > 1000){
             saveState();
-            lastSave = Date.now();
+            lastSave = now;
           }
         }
       }
+
+      refreshMessage(assistantMsg);
+      scrollBottom(false);
     }
 
     async function getValidResponse(payload){
@@ -666,6 +758,10 @@
       if(!t) return false;
 
       if(/^\/image\b/i.test(t) || /^\/img\b/i.test(t)) return true;
+
+      if(/^(شلون|كيف|اشرح|علمني|ماهي|ما هي|ماهو|ما هو|شنو|طريقة|what|how|explain)\b/i.test(t)){
+        return false;
+      }
 
       var hasImageWord = /(صورة|صور|بوستر|ملصق|لوغو|لوجو|شعار|خلفية|wallpaper|image|picture|poster|logo)/i.test(t);
       var hasCreateVerb = /(انشئ|أنشئ|انشاء|إنشاء|اصنع|إصنع|سوي|سويلي|سوّي|صمم|صمّم|ارسم|ولد|ولّد|generate|create|draw|design|make)/i.test(t);
@@ -1246,7 +1342,7 @@
     fileInput.addEventListener("change",function(){handleFiles(fileInput.files);});
     voiceBtn.addEventListener("click",startVoice);
     imageBtn.addEventListener("click",function(){
-      imageModel.value = settings.imageModel || "flux";
+      imageModel.value = settings.imageModel || "auto";
       imageModal.classList.add("open");
       setTimeout(function(){imagePrompt.focus();},50);
     });
@@ -1463,8 +1559,20 @@
       });
     }
 
-    applySettings();
-    saveState();
-    renderAll();
-    resizeInput();
+    async function bootstrap(){
+      applySettings();
+      statusText.textContent = "جاري تحميل المحادثات...";
+      await hydrateStateFromDb();
+      renderAll();
+      resizeInput();
+      statusText.textContent = navigator.onLine ? "جاهز" : "غير متصل";
+      saveState();
+    }
+
+    bootstrap().catch(function(error){
+      console.error("Bootstrap error",error);
+      renderAll();
+      resizeInput();
+      statusText.textContent = "جاهز";
+    });
   })();
