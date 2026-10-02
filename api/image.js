@@ -1,31 +1,7 @@
+const { getClientIp, isRateLimited } = require("./_shared/rate-limit");
 const IMAGE_ENDPOINT = "https://camillecyrm.serv00.net/v1/images/generations";
 const DIRECT_FLUX_ENDPOINT = "https://camillecyrm.serv00.net/Image-Flux/api.php";
 const ALLOWED_MODELS = new Set(["auto","flux","flux-realism","flux-anime","sana"]);
-const buckets = new Map();
-
-function getClientIp(req) {
-  return String(
-    req.headers["x-forwarded-for"] ||
-    req.headers["x-real-ip"] ||
-    "unknown"
-  ).split(",")[0].trim();
-}
-
-function isRateLimited(ip) {
-  const now = Date.now();
-  const windowMs = 10 * 60 * 1000;
-  const maxRequests = 15;
-  const current = buckets.get(ip);
-
-  if (!current || now - current.startedAt > windowMs) {
-    buckets.set(ip, { startedAt: now, count: 1 });
-    return false;
-  }
-
-  current.count += 1;
-  return current.count > maxRequests;
-}
-
 function validateOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return true;
@@ -179,7 +155,7 @@ module.exports = async function handler(req, res) {
 
   const ip = getClientIp(req);
 
-  if (isRateLimited(ip)) {
+  if (await isRateLimited("image:" + ip, 15, 600)) {
     return res.status(429).json({
       status: false,
       error: "تم إرسال طلبات صور كثيرة خلال فترة قصيرة. حاول لاحقاً."
