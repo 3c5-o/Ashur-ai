@@ -1,4 +1,4 @@
-const CACHE_NAME = "ashur-ai-v10";
+const CACHE_NAME = "ashur-ai-v11";
 const STATIC_ASSETS = [
   "/",
   "/index.html",
