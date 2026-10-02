@@ -1,3 +1,4 @@
+const { getClientIp, isRateLimited } = require("./_shared/rate-limit");
 const AI_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const AI_MODEL = "openrouter/free";
 
@@ -46,31 +47,6 @@ const MODE_PROMPTS = {
   summary: "ركز على التلخيص واستخراج النقاط المهمة مع الحفاظ على المعنى وعدم اختراع معلومات.",
   translate: "ركز على الترجمة الطبيعية الدقيقة، واحفظ المعنى والنبرة ولا تضف شرحاً إلا إذا طُلب."
 };
-
-const buckets = new Map();
-
-function getClientIp(req) {
-  return String(
-    req.headers["x-forwarded-for"] ||
-    req.headers["x-real-ip"] ||
-    "unknown"
-  ).split(",")[0].trim();
-}
-
-function isRateLimited(ip) {
-  const now = Date.now();
-  const windowMs = 10 * 60 * 1000;
-  const maxRequests = 40;
-  const current = buckets.get(ip);
-
-  if (!current || now - current.startedAt > windowMs) {
-    buckets.set(ip, { startedAt: now, count: 1 });
-    return false;
-  }
-
-  current.count += 1;
-  return current.count > maxRequests;
-}
 
 function validateOrigin(req) {
   const origin = req.headers.origin;
@@ -524,7 +500,7 @@ module.exports = async function handler(req, res) {
   }
 
   const ip = getClientIp(req);
-  if (isRateLimited(ip)) {
+  if (await isRateLimited("chat:" + ip, 40, 600)) {
     return res.status(429).json({
       status: false,
       error: "تم إرسال طلبات كثيرة خلال فترة قصيرة. انتظر قليلاً ثم حاول مجدداً."
@@ -570,10 +546,31 @@ module.exports = async function handler(req, res) {
     const history = cleanHistory(body.history);
     const longOutput = Boolean(body.long_output);
     const hasImages = attachments.some(item => item.kind === "image");
+    const combinedChars =
+      text.length +
+      attachments.reduce((sum, item) => sum + (item.text?.length || 0), 0);
 
-    // The experimental chat documentation does not explicitly guarantee image input.
-    // If an image is attached, silently use the image-capable default path.
-    if (body.source === "experimental" && !hasImages) {
+    if (combinedChars > 260000) {
+      return res.status(413).json({
+        status: false,
+        error: "حجم النص والملفات المرفقة كبير جداً لطلب واحد."
+      });
+    }
+
+    const hasExperimentalServerKey = Boolean(
+      String(process.env.AIGATE_API_KEY || "").trim()
+    );
+
+    // Large text requests are routed to the experimental text path when its
+    // server-side key is available. Image attachments stay on the vision path.
+    const shouldUseExperimental =
+      !hasImages &&
+      (
+        body.source === "experimental" ||
+        (combinedChars > 90000 && hasExperimentalServerKey)
+      );
+
+    if (shouldUseExperimental) {
       return await handleExperimentalSource({
         res,
         body,
