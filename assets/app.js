@@ -27,6 +27,7 @@
     var activeTitle = document.getElementById("activeTitle");
     var statusText = document.getElementById("statusText");
     var modeSelect = document.getElementById("modeSelect");
+    var modelSelect = document.getElementById("modelSelect");
     var input = document.getElementById("messageInput");
     var sendBtn = document.getElementById("sendBtn");
     var attachBtn = document.getElementById("attachBtn");
@@ -47,15 +48,14 @@
     var enterSetting = document.getElementById("enterSetting");
     var longOutputSetting = document.getElementById("longOutputSetting");
     var continuationSetting = document.getElementById("continuationSetting");
-    var sourceSetting = document.getElementById("sourceSetting");
-    var experimentalSettings = document.getElementById("experimentalSettings");
-    var experimentalUrl = document.getElementById("experimentalUrl");
-    var experimentalModel = document.getElementById("experimentalModel");
-    var experimentalKey = document.getElementById("experimentalKey");
-    var experimentalTraining = document.getElementById("experimentalTraining");
-    var experimentalMarkdown = document.getElementById("experimentalMarkdown");
-    var experimentalFallback = document.getElementById("experimentalFallback");
-    var testExperimentalBtn = document.getElementById("testExperimentalBtn");
+    var customInstructions = document.getElementById("customInstructions");
+    var customKnowledge = document.getElementById("customKnowledge");
+    var linkChatsBtn = document.getElementById("linkChatsBtn");
+    var linkedCount = document.getElementById("linkedCount");
+    var linkedContextStrip = document.getElementById("linkedContextStrip");
+    var linkModal = document.getElementById("linkModal");
+    var linkedChatList = document.getElementById("linkedChatList");
+    var clearLinksBtn = document.getElementById("clearLinksBtn");
 
     function uid(prefix){
       return (prefix || "id") + "_" + Date.now() + "_" + Math.random().toString(36).slice(2,9);
@@ -70,12 +70,9 @@
         longOutput:true,
         maxContinuations:6,
         imageModel:"auto",
-        source:"default",
-        experimentalUrl:"https://camillecyrm.serv00.net/v1/chat/completions",
-        experimentalModel:"gpt-5-6",
-        experimentalTraining:"",
-        experimentalMarkdown:"",
-        experimentalFallback:true
+        defaultModel:"auto",
+        customInstructions:"",
+        customKnowledge:""
       };
     }
 
@@ -185,6 +182,7 @@
 
       if(stored && Array.isArray(stored.chats) && stored.chats.length){
         state = stored;
+        state.chats = state.chats.map(normalizeChat);
         activeId = stored.activeId || stored.chats[0].id;
         return;
       }
@@ -208,6 +206,8 @@
         id:uid("chat"),
         title:"محادثة جديدة",
         mode:"general",
+        model:settings ? (settings.defaultModel || "auto") : "auto",
+        linkedChatIds:[],
         createdAt:Date.now(),
         updatedAt:Date.now(),
         messages:Array.isArray(legacy) ? legacy.map(function(m){
@@ -229,9 +229,18 @@
       schedulePersist();
     }
 
+    function normalizeChat(chat){
+      if(!chat) return chat;
+      if(!chat.mode) chat.mode = "general";
+      if(!chat.model) chat.model = settings.defaultModel || "auto";
+      if(!Array.isArray(chat.linkedChatIds)) chat.linkedChatIds = [];
+      if(!Array.isArray(chat.messages)) chat.messages = [];
+      return chat;
+    }
+
     function currentChat(){
       var found = state.chats.find(function(c){return c.id === activeId;});
-      if(found) return found;
+      if(found) return normalizeChat(found);
       if(!state.chats.length) createChat();
       return state.chats[0];
     }
@@ -241,6 +250,8 @@
         id:uid("chat"),
         title:"محادثة جديدة",
         mode:"general",
+        model:settings.defaultModel || "auto",
+        linkedChatIds:[],
         createdAt:Date.now(),
         updatedAt:Date.now(),
         messages:[]
@@ -282,15 +293,8 @@
       longOutputSetting.checked = settings.longOutput !== false;
       continuationSetting.value = String(settings.maxContinuations || 6);
       imageModel.value = settings.imageModel || "auto";
-      sourceSetting.value = settings.source === "experimental" ? "experimental" : "default";
-      experimentalUrl.value = settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions";
-      experimentalModel.value = settings.experimentalModel || "gpt-5-6";
-      experimentalKey.value = sessionStorage.getItem("ashur_experimental_key") || "";
-      experimentalTraining.value = settings.experimentalTraining || "";
-      experimentalMarkdown.value = settings.experimentalMarkdown || "";
-      experimentalFallback.checked = settings.experimentalFallback !== false;
-      experimentalSettings.classList.toggle("show", sourceSetting.value === "experimental");
-      document.getElementById("fallbackRow").style.display = sourceSetting.value === "experimental" ? "flex" : "none";
+      customInstructions.value = settings.customInstructions || "";
+      customKnowledge.value = settings.customKnowledge || "";
     }
 
     function renderAll(){
@@ -299,6 +303,8 @@
       var chat = currentChat();
       activeTitle.textContent = chat.title;
       modeSelect.value = chat.mode || "general";
+      modelSelect.value = chat.model || settings.defaultModel || "auto";
+      renderLinkedContextStrip();
     }
 
     function renderChats(){
@@ -368,6 +374,7 @@
           if(!state.chats.length){
             var fresh = {
               id:uid("chat"),title:"محادثة جديدة",mode:"general",
+              model:settings.defaultModel || "auto",linkedChatIds:[],
               createdAt:Date.now(),updatedAt:Date.now(),messages:[]
             };
             state.chats.push(fresh);
@@ -377,6 +384,132 @@
           renderAll();
         }
       }
+    }
+
+    function linkedChatsFor(chat){
+      var ids = Array.isArray(chat.linkedChatIds) ? chat.linkedChatIds : [];
+      return ids
+        .map(function(id){ return state.chats.find(function(c){ return c.id === id; }); })
+        .filter(function(c){ return c && c.id !== chat.id; })
+        .slice(0,3);
+    }
+
+    function buildLinkedContext(chat){
+      var linked = linkedChatsFor(chat);
+      if(!linked.length) return "";
+
+      var sections = [];
+      var total = 0;
+
+      linked.forEach(function(other){
+        var rows = other.messages
+          .filter(function(m){ return m && !m.streaming && (m.role === "user" || m.role === "assistant") && m.text; })
+          .slice(-8)
+          .map(function(m){
+            return (m.role === "assistant" ? "Ashur" : "المستخدم") + ": " + String(m.text || "").slice(0,5000);
+          });
+
+        var section = "[محادثة مستدعاة: " + other.title + "]\n" + rows.join("\n");
+        if(total + section.length <= 35000){
+          sections.push(section);
+          total += section.length;
+        }
+      });
+
+      return sections.join("\n\n");
+    }
+
+    function renderLinkedContextStrip(){
+      var chat = currentChat();
+      var linked = linkedChatsFor(chat);
+      linkedContextStrip.innerHTML = "";
+      linkedCount.textContent = String(linked.length);
+      linkedCount.style.display = linked.length ? "grid" : "none";
+
+      linked.forEach(function(other){
+        var pill = document.createElement("div");
+        pill.className = "linked-context-pill";
+
+        var name = document.createElement("span");
+        name.textContent = "استدعاء: " + other.title;
+
+        var remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "×";
+        remove.addEventListener("click",function(){
+          chat.linkedChatIds = chat.linkedChatIds.filter(function(id){ return id !== other.id; });
+          saveState();
+          renderLinkedContextStrip();
+        });
+
+        pill.appendChild(name);
+        pill.appendChild(remove);
+        linkedContextStrip.appendChild(pill);
+      });
+    }
+
+    function renderLinkedChatList(){
+      var chat = currentChat();
+      linkedChatList.innerHTML = "";
+
+      var others = state.chats
+        .filter(function(item){ return item.id !== chat.id; })
+        .sort(function(a,b){ return b.updatedAt - a.updatedAt; });
+
+      if(!others.length){
+        var empty = document.createElement("div");
+        empty.className = "no-results";
+        empty.textContent = "ماكو محادثة ثانية للاستدعاء بعد.";
+        linkedChatList.appendChild(empty);
+        return;
+      }
+
+      others.forEach(function(other){
+        var row = document.createElement("label");
+        row.className = "link-chat-row";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = chat.linkedChatIds.indexOf(other.id) !== -1;
+
+        var copy = document.createElement("div");
+        var title = document.createElement("strong");
+        title.textContent = other.title;
+        var meta = document.createElement("small");
+        meta.textContent = other.messages.length + " رسالة · " + formatTime(other.updatedAt);
+
+        copy.appendChild(title);
+        copy.appendChild(meta);
+        row.appendChild(checkbox);
+        row.appendChild(copy);
+
+        checkbox.addEventListener("change",function(){
+          chat.linkedChatIds = Array.isArray(chat.linkedChatIds) ? chat.linkedChatIds : [];
+          if(checkbox.checked){
+            if(chat.linkedChatIds.indexOf(other.id) === -1 && chat.linkedChatIds.length < 3){
+              chat.linkedChatIds.push(other.id);
+            }else if(chat.linkedChatIds.length >= 3){
+              checkbox.checked = false;
+              showToast("تقدر تستدعي حتى 3 محادثات بنفس الوقت.");
+            }
+          }else{
+            chat.linkedChatIds = chat.linkedChatIds.filter(function(id){ return id !== other.id; });
+          }
+          saveState();
+          renderLinkedContextStrip();
+        });
+
+        linkedChatList.appendChild(row);
+      });
+    }
+
+    function openLinkModal(){
+      renderLinkedChatList();
+      linkModal.classList.add("open");
+    }
+
+    function closeLinkModal(){
+      linkModal.classList.remove("open");
     }
 
     function escapeHtml(text){
@@ -461,6 +594,8 @@
 
       activeTitle.textContent = chat.title;
       modeSelect.value = chat.mode || "general";
+      modelSelect.value = chat.model || settings.defaultModel || "auto";
+      renderLinkedContextStrip();
       scrollBottom(false);
     }
 
@@ -706,15 +841,12 @@
         }catch(e){}
 
         if(
-          payload.source === "experimental" &&
-          settings.experimentalFallback !== false &&
+          payload.model &&
+          payload.model !== "auto" &&
           !currentController.signal.aborted
         ){
-          statusText.textContent = "إعادة المحاولة...";
-          var fallbackPayload = Object.assign({},payload,{
-            source:"default",
-            experimental:{}
-          });
+          statusText.textContent = "إعادة المحاولة تلقائياً...";
+          var fallbackPayload = Object.assign({},payload,{model:"auto"});
 
           response = await requestChatStream(fallbackPayload);
           contentType = response.headers.get("content-type") || "";
@@ -725,7 +857,7 @@
             throw new Error(fallbackData.error || "تعذر إكمال الطلب.");
           }
 
-          showToast("تم إكمال الطلب عبر المسار الاحتياطي.");
+          showToast("تم التحويل تلقائياً إلى نموذج متاح.");
           return {response:response,payload:fallbackPayload};
         }
 
@@ -876,8 +1008,7 @@
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
             prompt:promptText,
-            model:forcedModel || "auto",
-            key:sessionStorage.getItem("ashur_experimental_key") || ""
+            model:forcedModel || "auto"
           }),
           signal:currentController.signal
         });
@@ -995,14 +1126,10 @@
           mode:chat.mode || "general",
           temperature:Number(settings.temperature),
           long_output:(chat.mode === "coding") && settings.longOutput !== false,
-          source:settings.source === "experimental" ? "experimental" : "default",
-          experimental:{
-            url:settings.experimentalUrl || "https://camillecyrm.serv00.net/v1/chat/completions",
-            model:settings.experimentalModel || "gpt-5-6",
-            key:sessionStorage.getItem("ashur_experimental_key") || "",
-            training:settings.experimentalTraining || "",
-            md:settings.experimentalMarkdown || ""
-          },
+          model:chat.model || settings.defaultModel || "auto",
+          custom_instructions:settings.customInstructions || "",
+          custom_knowledge:settings.customKnowledge || "",
+          linked_context:buildLinkedContext(chat),
           conversation_id:chat.id,
           history:history,
           attachments:wireAttachments.map(function(a){
@@ -1360,12 +1487,36 @@
       if(e.target === settingsModal) closeSettings();
     });
 
+    linkChatsBtn.addEventListener("click",openLinkModal);
+    document.getElementById("closeLinkModal").addEventListener("click",closeLinkModal);
+    linkModal.addEventListener("click",function(e){
+      if(e.target === linkModal) closeLinkModal();
+    });
+    clearLinksBtn.addEventListener("click",function(){
+      var chat = currentChat();
+      chat.linkedChatIds = [];
+      saveState();
+      renderLinkedChatList();
+      renderLinkedContextStrip();
+      showToast("تم إلغاء استدعاء المحادثات.");
+    });
+
     chatSearch.addEventListener("input",renderChats);
 
     modeSelect.addEventListener("change",function(){
       var chat = currentChat();
       chat.mode = modeSelect.value;
       chat.updatedAt = Date.now();
+      saveState();
+      renderChats();
+    });
+
+    modelSelect.addEventListener("change",function(){
+      var chat = currentChat();
+      chat.model = modelSelect.value || "auto";
+      settings.defaultModel = chat.model;
+      chat.updatedAt = Date.now();
+      saveSettings();
       saveState();
       renderChats();
     });
@@ -1448,6 +1599,21 @@
 
     document.querySelectorAll(".suggestion").forEach(function(btn){
       btn.addEventListener("click",function(){
+        if(btn.dataset.mode){
+          var chat = currentChat();
+          chat.mode = btn.dataset.mode;
+          modeSelect.value = chat.mode;
+          saveState();
+        }
+
+        if(btn.dataset.image === "1"){
+          imagePrompt.value = btn.dataset.prompt || "";
+          imageModel.value = settings.imageModel || "auto";
+          imageModal.classList.add("open");
+          setTimeout(function(){imagePrompt.focus();},50);
+          return;
+        }
+
         input.value = btn.dataset.prompt || "";
         resizeInput();
         input.focus();
@@ -1486,88 +1652,14 @@
       saveSettings();
     });
 
-    sourceSetting.addEventListener("change",function(){
-      settings.source = sourceSetting.value === "experimental" ? "experimental" : "default";
-      saveSettings();
-      experimentalSettings.classList.toggle("show", settings.source === "experimental");
-      document.getElementById("fallbackRow").style.display = settings.source === "experimental" ? "flex" : "none";
-      showToast(settings.source === "experimental" ? "تم تفعيل المصدر التجريبي." : "تم تفعيل المصدر الأساسي.");
-    });
-
-    experimentalUrl.addEventListener("change",function(){
-      var value = experimentalUrl.value.trim();
-      settings.experimentalUrl = value || "https://camillecyrm.serv00.net/v1/chat/completions";
-      experimentalUrl.value = settings.experimentalUrl;
+    customInstructions.addEventListener("input",function(){
+      settings.customInstructions = customInstructions.value.slice(0,30000);
       saveSettings();
     });
 
-    experimentalKey.addEventListener("input",function(){
-      sessionStorage.setItem("ashur_experimental_key", experimentalKey.value.trim());
-    });
-
-    experimentalModel.addEventListener("change",function(){
-      settings.experimentalModel = experimentalModel.value || "gpt-5-6";
+    customKnowledge.addEventListener("input",function(){
+      settings.customKnowledge = customKnowledge.value.slice(0,60000);
       saveSettings();
-    });
-
-    experimentalTraining.addEventListener("input",function(){
-      settings.experimentalTraining = experimentalTraining.value.slice(0,60000);
-      saveSettings();
-    });
-
-    experimentalMarkdown.addEventListener("input",function(){
-      settings.experimentalMarkdown = experimentalMarkdown.value.slice(0,60000);
-      saveSettings();
-    });
-
-    experimentalFallback.addEventListener("change",function(){
-      settings.experimentalFallback = experimentalFallback.checked;
-      saveSettings();
-    });
-
-    testExperimentalBtn.addEventListener("click",async function(){
-      var oldText = testExperimentalBtn.textContent;
-      testExperimentalBtn.disabled = true;
-      testExperimentalBtn.textContent = "جاري الاختبار...";
-
-      try{
-        var response = await fetch("/api/chat",{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            text:"مرحبا",
-            temperature:Number(settings.temperature),
-            source:"experimental",
-            experimental:{
-              url:experimentalUrl.value.trim() || "https://camillecyrm.serv00.net/v1/chat/completions",
-              model:experimentalModel.value || "gpt-5-6",
-              key:experimentalKey.value.trim(),
-              training:experimentalTraining.value || "",
-              md:experimentalMarkdown.value || ""
-            },
-            conversation_id:"settings_test"
-          })
-        });
-
-        var type = response.headers.get("content-type") || "";
-        var message = "";
-
-        if(type.indexOf("application/json") !== -1){
-          var data = await response.json();
-          if(!response.ok) throw new Error(data.error || "فشل الاختبار.");
-          message = data.response || "";
-        }else{
-          message = await response.text();
-          if(!response.ok) throw new Error(message || "فشل الاختبار.");
-        }
-
-        showToast(message ? "الاتصال بالمصدر التجريبي ناجح." : "تم الاتصال بالمصدر التجريبي.");
-      }catch(error){
-        showToast(error.message || "فشل اختبار المصدر التجريبي.");
-      }finally{
-        testExperimentalBtn.disabled = false;
-        testExperimentalBtn.textContent = oldText;
-      }
     });
 
     document.getElementById("clearAllBtn").addEventListener("click",async function(){
