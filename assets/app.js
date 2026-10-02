@@ -1651,12 +1651,12 @@
 
     customInstructions.addEventListener("input",function(){
       settings.customInstructions = customInstructions.value.slice(0,30000);
-      saveSettings();
+      localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));
     });
 
     customKnowledge.addEventListener("input",function(){
       settings.customKnowledge = customKnowledge.value.slice(0,60000);
-      saveSettings();
+      localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));
     });
 
     document.getElementById("clearAllBtn").addEventListener("click",async function(){
