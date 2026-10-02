@@ -583,12 +583,24 @@
       });
     }
 
+    function estimateTokens(text){
+      var value = String(text || "");
+      if(!value) return 0;
+      // Conservative UI estimate for mixed Arabic/code text.
+      return Math.ceil(value.length / 3.2);
+    }
+
     function resizeInput(){
       input.style.height = "auto";
       input.style.height = Math.min(input.scrollHeight,150) + "px";
       var text = input.value || "";
       var lines = text ? text.split("\n").length : 1;
-      inputUsage.textContent = text.length.toLocaleString("en-US") + " حرف · " + lines.toLocaleString("en-US") + " سطر";
+      var tokens = estimateTokens(text);
+      inputUsage.textContent =
+        text.length.toLocaleString("en-US") + " حرف · " +
+        lines.toLocaleString("en-US") + " سطر · ~" +
+        tokens.toLocaleString("en-US") + " token";
+      inputUsage.classList.toggle("warning",text.length > 120000);
     }
 
     function setGenerating(value){
@@ -739,15 +751,29 @@
         part += 1;
         statusText.textContent = "جاري تكملة الكود " + part + "/" + maxParts + "...";
 
+        var continuationHistory = (payload.history || []).slice(-18);
+        continuationHistory.push({
+          role:"user",
+          content:String(payload.text || "").slice(0,60000)
+        });
+        continuationHistory.push({
+          role:"assistant",
+          content:assistantMsg.text.slice(-70000)
+        });
+
         activePayload = Object.assign({},result.payload,{
+          text:"أكمل الرد السابق من آخر نقطة بدون إعادة المحتوى السابق.",
+          history:continuationHistory,
           continuation:{
-            part:part,
-            tail:assistantMsg.text.slice(-30000)
+            part:part
           },
           attachments:[]
         });
 
-        if(!hasContinue && assistantMsg.text.length < 8000){
+        var fenceCount = (assistantMsg.text.match(/```/g) || []).length;
+        var codeFenceOpen = fenceCount % 2 === 1;
+
+        if(!hasContinue && !codeFenceOpen && assistantMsg.text.length < 8000){
           break;
         }
       }
@@ -891,6 +917,10 @@
       if(!text && !wireAttachments.length){
         showToast("اكتب رسالة أو أرفق ملف.");
         return;
+      }
+
+      if(!options.reuseUser && text.length > 120000){
+        showToast("النص كبير جداً؛ قد يحتاج المصدر إلى وقت أطول لمعالجته.");
       }
 
       if(!options.reuseUser && text && !wireAttachments.length && isImageRequest(text)){
