@@ -1,12 +1,24 @@
-const CACHE_NAME = "ashur-ai-v9";
-const STATIC_ASSETS = ["/", "/index.html", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "ashur-ai-v10";
+const STATIC_ASSETS = [
+  "/",
+  "/index.html",
+  "/assets/app.css",
+  "/assets/app.js",
+  "/manifest.webmanifest",
+  "/icon.svg"
+];
 
 self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
   );
+});
+
+self.addEventListener("message", event => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", event => {
@@ -29,10 +41,14 @@ self.addEventListener("fetch", event => {
   event.respondWith(
     fetch(request)
       .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        if (response && response.ok && url.origin === self.location.origin) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        }
         return response;
       })
-      .catch(() => caches.match(request).then(hit => hit || caches.match("/index.html")))
+      .catch(() =>
+        caches.match(request).then(hit => hit || caches.match("/index.html"))
+      )
   );
 });
