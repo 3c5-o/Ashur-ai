@@ -178,7 +178,7 @@ module.exports = async function handler(req, res) {
 
     const prompt = String(body.prompt || "").trim().slice(0, 5000);
     const requestedModel = String(body.model || "auto").trim();
-    const key = String(process.env.AIGATE_API_KEY || body.key || "").trim();
+    const key = String(process.env.AIGATE_API_KEY || "").trim();
 
     if (!prompt) {
       return res.status(400).json({
@@ -190,7 +190,7 @@ module.exports = async function handler(req, res) {
     if (!key) {
       return res.status(401).json({
         status: false,
-        error: "ميزة إنشاء الصور تحتاج مفتاح المصدر التجريبي."
+        error: "إعداد إنشاء الصور غير مكتمل على الخادم."
       });
     }
 
